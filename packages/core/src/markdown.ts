@@ -575,6 +575,11 @@ function escapeClosingHashes(text: string): string {
   return match !== null && match[2] === "" ? `${match[1]}\\#${match[3]}` : text;
 }
 
+/** Markdown as a quote, `> ` before each line and `>` on a blank one, as a blockquote is written. */
+export function quoteMarkdown(text: string): string {
+  return prefixLines(text, "> ", ">");
+}
+
 function prefixLines(text: string, prefix: string, empty: string): string {
   return text
     .split("\n")

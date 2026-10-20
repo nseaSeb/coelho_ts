@@ -87,8 +87,8 @@ export type DomRender = [
 ];
 export type Render = DomRender | RenderFn;
 
-/** An HTML import rule: a tag name, or a tag name with a function turning DOM attributes into node attributes. */
-export type ParseRule = string | [tag: string, attrs: (attrs: Record<string, string>) => Attrs];
+/** An HTML import rule: a tag name, or a tag name with a function turning DOM attributes into node attributes, or `null` when this element is not one. */
+export type ParseRule = string | [tag: string, attrs: (attrs: Record<string, string>) => Attrs | null];
 
 export interface NodeSpecInput {
   content?: string;

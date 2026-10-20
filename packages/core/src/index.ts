@@ -7,5 +7,5 @@ export { validateAttr, sameJson } from "./attr.js";
 export { parse as parseContentExpression, matches as matchesContentExpression, type Ast as ContentExpression } from "./contentExpression.js";
 export { anchorAt, CONTEXT, contentSize, nodeSize, reanchor, textBetween, type Anchor, type ReanchorOptions } from "./anchors.js";
 export type { Comment, Thread } from "./comments.js";
-export { toMarkdown, type MarkdownOptions } from "./markdown.js";
+export { quoteMarkdown, toMarkdown, type MarkdownOptions } from "./markdown.js";
 export { diffDocuments, diffWords, type BlockChange, type WordChange } from "./diff.js";

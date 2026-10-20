@@ -3,6 +3,7 @@ import { SuggestionMenu, useSuggestion, type CoelhoEditorHandle, type NodeViewPr
 import type { Schema } from "prosemirror-model";
 import type { Command } from "prosemirror-state";
 import type { ReactNode } from "react";
+import { CALLOUT_KINDS, type CalloutKind } from "./callout.js";
 
 export interface Person {
   id: string;
@@ -128,26 +129,20 @@ export function Suggestions({ editor, keys }: { editor: CoelhoEditorHandle; keys
   );
 }
 
-const KINDS: Record<string, { icon: string; label: string }> = {
-  note: { icon: "ℹ", label: "Note" },
-  tip: { icon: "✓", label: "Tip" },
-  warning: { icon: "!", label: "Warning" },
-};
-
 /**
  * How the editor draws a callout: an icon and a choice of kind, drawn by
  * React beside the callout's text, which stays editable. Changing the kind
  * is a change of the document, undone like any other.
  */
 export function CalloutChrome({ node, updateAttributes }: NodeViewProps): ReactNode {
-  const kind = String(node.attrs.kind);
+  const kind = String(node.attrs.kind) as CalloutKind;
   return (
     <>
       <span className="callout-icon" aria-hidden="true">
-        {KINDS[kind]?.icon ?? "ℹ"}
+        {CALLOUT_KINDS[kind]?.icon ?? CALLOUT_KINDS.note.icon}
       </span>
       <select className="callout-kind" aria-label="Callout kind" value={kind} onChange={(event) => updateAttributes({ kind: event.target.value })}>
-        {Object.entries(KINDS).map(([value, { label }]) => (
+        {Object.entries(CALLOUT_KINDS).map(([value, { label }]) => (
           <option key={value} value={value}>
             {label}
           </option>

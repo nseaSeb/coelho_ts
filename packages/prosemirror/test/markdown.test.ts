@@ -303,6 +303,32 @@ describe("fromMarkdown", () => {
     expect(JSON.stringify(fromMarkdown("[[docs/install]]", linked))).not.toContain("page_link");
   });
 
+  test("reads Obsidian callouts into a node of the schema, when asked, and leaves other quotes alone", () => {
+    const withCallout = extendSchema(defaultSchema(), {
+      nodes: {
+        callout: {
+          content: "block+",
+          group: "block",
+          attrs: { kind: { default: "note", validate: { oneOf: ["note", "warning"] } } },
+          render: ["aside", []],
+          parse: [["aside", (attrs) => ((attrs.class ?? "").split(/\s+/).includes("callout") ? {} : null)]],
+        },
+      },
+    });
+    const callouts = { node: "callout", attr: "kind" };
+    const read = fromMarkdown("> [!WARNING]\n> Back up **first**.\n\n> Just a quote.\n\n> [!unknown] Title\n> text", withCallout, { callouts });
+    expect(read.content).toEqual([
+      { type: "callout", attrs: { kind: "warning" }, content: [{ type: "paragraph", content: [{ type: "text", text: "Back up " }, { type: "text", text: "first", marks: [{ type: "bold" }] }, { type: "text", text: "." }] }] },
+      { type: "blockquote", content: [{ type: "paragraph", content: [{ type: "text", text: "Just a quote." }] }] },
+      // A kind the schema refuses leaves the default; the title stays text.
+      { type: "callout", content: [{ type: "paragraph", content: [{ type: "text", text: "Title text" }] }] },
+    ]);
+    // Without the option, a callout is a quote.
+    expect(fromMarkdown("> [!warning]\n> x", withCallout).content?.[0]?.type).toBe("blockquote");
+    // A parse rule may refuse an element: an aside that is not a callout is not one.
+    expect(fromHtml('<aside class="sidebar"><p>Related</p></aside><aside class="callout"><p>Yes</p></aside>', withCallout).content?.map((node) => node.type)).toEqual(["paragraph", "callout"]);
+  });
+
   test("keeps straight quotes, as they were typed", () => {
     expect(toText(fromMarkdown(`He said "it's fine"`, schema), schema)).toContain(`He said "it's fine"`);
   });

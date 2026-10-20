@@ -13,9 +13,18 @@ The four packages are versioned together.
   element of its own, beside the content, which stays ProseMirror's and is
   edited like any other text; ProseMirror never reads what React draws, and
   events in the chrome are the component's. Components receive
-  `updateAttributes`, which changes the node as one step of the history,
-  and the node's plain attributes are mirrored as `data-*` on its element
-  for a stylesheet to follow. Leaf node views work as before.
+  `updateAttributes`, which changes the node as one step of the history
+  and throws on a name or a value the schema refuses. A node view's element
+  now wears the classes the page renders for that node, and its plain
+  attributes as `data-*` (leaf node views too). A component renders again
+  only when its node's attributes or selection change, not while its
+  content is typed in; events go to the component only on its controls.
+- **@nseaprotector/coelho-prosemirror**: `fromMarkdown` and `markdownPaste`
+  read Obsidian callouts (`> [!warning]`) into a node of your schema with
+  `callouts`. A parse rule's function may return `null` to refuse an
+  element.
+- **@nseaprotector/coelho-core**: `quoteMarkdown` writes Markdown as a
+  quote, for a node override such as a callout.
 
 ## 0.2.0 — 2026-10-20
 

@@ -176,7 +176,10 @@ function parseRules(spec: CoelhoNodeSpec | CoelhoMarkSpec, inline: boolean): Tag
       getAttrs: (dom: HTMLElement) => {
         const domAttrs: Record<string, string> = {};
         for (const attribute of Array.from(dom.attributes)) domAttrs[attribute.name] = attribute.value;
-        const given: Record<string, unknown> = custom === null ? {} : { ...custom(domAttrs) };
+        const read = custom === null ? {} : custom(domAttrs);
+        // A rule that says this element is not one of its nodes does not match it.
+        if (read === null) return false;
+        const given: Record<string, unknown> = { ...read };
         if (custom === null) for (const name of Object.keys(spec.attrs)) if (name in domAttrs) given[name] = domAttrs[name];
         if (heading !== null && "level" in spec.attrs && !("level" in given)) given.level = Number(heading[1]);
         return holdAttrs(spec, given);

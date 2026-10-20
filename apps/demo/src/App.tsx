@@ -1,12 +1,11 @@
-import { canonical, defaultSchema, escape, extendSchema, hash, isBlank, reanchor, sanitize, tag, textLength, toHtml, toMarkdown, toText, validate, type Node, type Thread } from "@nseaprotector/coelho-core";
+import { canonical, defaultSchema, escape, extendSchema, quoteMarkdown, hash, isBlank, reanchor, sanitize, tag, textLength, toHtml, toMarkdown, toText, validate, type Node, type Thread } from "@nseaprotector/coelho-core";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { calloutClasses, calloutKinds } from "./callout.js";
 import { Collab } from "./Collab.js";
 import { CommentedEditor, type LiveThread } from "./Comments.js";
 
 // The default schema plus what an application adds: a mark with a class of
 // its own. The editor, the page and the validator all read this one object.
-const CALLOUT_KINDS = ["note", "tip", "warning"];
-
 const schema = extendSchema(defaultSchema(), {
   nodes: {
     // A mention is an ordinary node: inline, void, carrying what the page
@@ -28,10 +27,20 @@ const schema = extendSchema(defaultSchema(), {
     callout: {
       content: "paragraph+",
       group: "block",
-      attrs: { kind: { default: "note", validate: { oneOf: CALLOUT_KINDS }, renderAs: { class: { note: "callout-note", tip: "callout-tip", warning: "callout-warning" } } } },
+      attrs: { kind: { default: "note", validate: { oneOf: calloutKinds }, renderAs: { class: calloutClasses } } },
       class: "callout",
       render: ["aside", []],
-      parse: [["aside", (attrs) => ({ kind: CALLOUT_KINDS.find((kind) => (attrs.class ?? "").includes(`callout-${kind}`)) ?? "note" })]],
+      // An aside is a callout only when it says so: one pasted from a web page stays its paragraphs.
+      parse: [
+        [
+          "aside",
+          (attrs) => {
+            const classes = (attrs.class ?? "").split(/\s+/);
+            if (!classes.includes("callout")) return null;
+            return { kind: calloutKinds.find((kind) => classes.includes(calloutClasses[kind] as string)) ?? "note" };
+          },
+        ],
+      ],
     },
   },
   marks: { highlight: { class: "hl", render: ["mark", []] } },
@@ -40,7 +49,7 @@ const schema = extendSchema(defaultSchema(), {
 /** Obsidian writes a callout as a quote whose first line names its kind. */
 const markdownOptions = {
   nodes: {
-    callout: (node: Node, inner: string) => `> [!${String(node.attrs?.kind ?? "note")}]\n${inner.split("\n").map((line) => (line === "" ? ">" : `> ${line}`)).join("\n")}`,
+    callout: (node: Node, inner: string) => quoteMarkdown(`[!${String(node.attrs?.kind ?? "note")}]\n${inner}`),
   },
 };
 

@@ -20,7 +20,10 @@ function inert(html: string): HTMLElement {
  * schema accepts. Needs a DOM (a browser, or jsdom).
  */
 export function fromHtml(html: string, schema: CoelhoSchema): Document {
-  const body = inert(html);
+  return fromBody(inert(html), schema);
+}
+
+function fromBody(body: HTMLElement, schema: CoelhoSchema): Document {
   openRequiredFirst(body, schema);
   const doc = DOMParser.fromSchema(proseMirrorSchemaFor(schema)).parse(body);
   // Reading, not writing: the length bounds are not this import's to apply.
@@ -132,8 +135,47 @@ function markdownToHtml(markdown: string, env: Env = {}): string {
  * exactly as it does for imported HTML. The inverse of `toMarkdown` from
  * `@nseaprotector/coelho-core`, up to what Markdown cannot say.
  */
-export function fromMarkdown(markdown: string, schema: CoelhoSchema, options: { wikiLinks?: WikiLinks } = {}): Document {
-  return fromHtml(markdownToHtml(markdown, options.wikiLinks === undefined ? {} : { wikiLinks: options.wikiLinks }), schema);
+/**
+ * Obsidian's callouts, `> [!warning]` and its lines, read as a node of the
+ * schema's own: the kind becomes the attribute, held to its validator like
+ * any other (one the schema refuses leaves the default), and the quote's
+ * blocks its content. Any other quote stays a quote.
+ */
+export interface Callouts {
+  /** The block node a callout becomes, such as `callout`. */
+  node: string;
+  /** The attribute that holds its kind. */
+  attr: string;
+}
+
+export interface MarkdownImportOptions {
+  wikiLinks?: WikiLinks;
+  callouts?: Callouts;
+}
+
+const CALLOUT = /^\[!([\w-]+)\][+-]?[ \t]*\n?/;
+
+function liftCallouts(body: HTMLElement, callouts: Callouts | undefined): void {
+  if (callouts === undefined) return;
+  for (const quote of Array.from(body.querySelectorAll("blockquote"))) {
+    const first = quote.firstElementChild;
+    const text = first?.tagName === "P" ? first.firstChild : null;
+    const marker = text?.nodeType === 3 ? CALLOUT.exec(text.textContent ?? "") : null;
+    if (first === null || text === null || marker === null) continue;
+    text.textContent = (text.textContent ?? "").slice(marker[0].length);
+    if ((first.textContent ?? "").trim() === "" && first.children.length === 0) first.remove();
+    const callout = quote.ownerDocument.createElement("div");
+    callout.setAttribute("data-coelho", callouts.node);
+    callout.setAttribute("data-coelho-attrs", JSON.stringify({ [callouts.attr]: (marker[1] ?? "").toLowerCase() }));
+    callout.append(...Array.from(quote.childNodes));
+    quote.replaceWith(callout);
+  }
+}
+
+export function fromMarkdown(markdown: string, schema: CoelhoSchema, options: MarkdownImportOptions = {}): Document {
+  const body = inert(markdownToHtml(markdown, options.wikiLinks === undefined ? {} : { wikiLinks: options.wikiLinks }));
+  liftCallouts(body, options.callouts);
+  return fromBody(body, schema);
 }
 
 /**
@@ -144,7 +186,7 @@ export function fromMarkdown(markdown: string, schema: CoelhoSchema, options: { 
  * link stays in it. Nothing is parsed inside code, inline or block, and
  * Shift-paste keeps everything plain.
  */
-export function markdownPaste(schema: CoelhoSchema): Plugin {
+export function markdownPaste(schema: CoelhoSchema, options: { callouts?: Callouts } = {}): Plugin {
   const parsed = new WeakSet<Fragment>();
   return new Plugin({
     props: {
@@ -152,6 +194,7 @@ export function markdownPaste(schema: CoelhoSchema): Plugin {
         if (plain || $context.marks().some((mark) => mark.type.spec.code)) return null as unknown as Slice;
         const body = inert(markdownToHtml(text));
         if (saysNothing(body, text)) return null as unknown as Slice;
+        liftCallouts(body, options.callouts);
         openRequiredFirst(body, schema);
         const slice = DOMParser.fromSchema($context.doc.type.schema).parseSlice(body, { context: $context });
         parsed.add(slice.content);

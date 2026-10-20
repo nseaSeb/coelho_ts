@@ -83,7 +83,9 @@ export function useCoelhoEditor(options: UseCoelhoEditorOptions): CoelhoEditor {
   historyRef.current = options.history;
   const nodeViewsRef = useRef(options.nodeViews);
   nodeViewsRef.current = options.nodeViews;
-  const [store] = useState(() => new NodeViewStore());
+  const schemaRef = useRef(schema);
+  schemaRef.current = schema;
+  const [store] = useState(() => new NodeViewStore(() => schemaRef.current));
   const entries = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const pmSchema = useMemo(() => proseMirrorSchemaFor(schema), [schema]);
   const viewRef = useRef<EditorView | null>(null);

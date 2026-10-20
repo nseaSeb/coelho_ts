@@ -8,10 +8,16 @@ import { useCoelhoEditor, type CoelhoEditorHandle, type NodeViewProps } from "..
 
 const schema = extendSchema(defaultSchema(), {
   nodes: {
+    chip: { group: "inline", inline: true, void: true, attrs: { id: { required: true, validate: "string" } }, render: ["span", []] },
     callout: {
       content: "paragraph+",
       group: "block",
-      attrs: { kind: { default: "note", validate: { oneOf: ["note", "warning"] } } },
+      attrs: {
+        kind: { default: "note", validate: { oneOf: ["note", "warning"] }, renderAs: { class: { note: "is-note", warning: "is-warning" } } },
+        link_target: { default: "self", validate: "string" },
+        folded: { default: false, validate: "boolean" },
+      },
+      class: "callout",
       render: ["aside", []],
       parse: ["aside"],
     },
@@ -19,6 +25,11 @@ const schema = extendSchema(defaultSchema(), {
 });
 
 let renders = 0;
+let chipRenders = 0;
+function Chip({ node }: NodeViewProps): ReactNode {
+  chipRenders += 1;
+  return <b>{String(node.attrs.id)}</b>;
+}
 /** Chrome around the callout's text: an icon and a select, the text itself left to ProseMirror. */
 function Callout({ node, updateAttributes }: NodeViewProps): ReactNode {
   renders += 1;
@@ -32,7 +43,7 @@ function Callout({ node, updateAttributes }: NodeViewProps): ReactNode {
     </>
   );
 }
-const nodeViews = { callout: Callout };
+const nodeViews = { callout: Callout, chip: Chip };
 
 let handle: CoelhoEditorHandle | null = null;
 let stored: Node | null = null;
@@ -132,4 +143,85 @@ describe("a React node view with content", () => {
     });
     expect(renders).toBe(before);
   });
+
+  test("typing inside a callout renders no component again, its own included", () => {
+    const doc: Node = {
+      type: "doc",
+      content: [
+        { type: "paragraph", content: Array.from({ length: 20 }, (_, i) => ({ type: "chip", attrs: { id: `c${i}` } })) },
+        ...(callout.content ?? []),
+      ],
+    };
+    const container = document.body.appendChild(document.createElement("div"));
+    root = createRoot(container);
+    act(() => root?.render(<Harness initial={doc} />));
+    const [calloutBefore, chipsBefore] = [renders, chipRenders];
+    act(() => {
+      const editor = handle!.view!;
+      let inside = -1;
+      editor.state.doc.descendants((node, pos) => {
+        if (node.type.name === "callout") inside = pos + 2;
+      });
+      [..."typed"].forEach((char, i) => editor.dispatch(editor.state.tr.insertText(char, inside + i)));
+    });
+    expect(handle!.view!.state.doc.lastChild?.textContent).toBe("typedMind the gap.");
+    expect(renders - calloutBefore).toBe(0);
+    expect(chipRenders - chipsBefore).toBe(0);
+  });
+
+  test("the element carries the page's classes and plain attributes, data names written with dashes", () => {
+    const container = mount();
+    const element = container.querySelector(".coelho-node-view-callout") as HTMLElement;
+    expect(element.className).toBe("coelho-node-view coelho-node-view-callout is-note callout");
+    expect(element.getAttribute("data-link-target")).toBe("self");
+    // false is no attribute, so [data-folded] does not match it.
+    expect(element.hasAttribute("data-folded")).toBe(false);
+  });
 });
+
+describe("updateAttributes", () => {
+  test("refuses a value the schema refuses, and a name it does not know", async () => {
+    const { NodeViewStore } = await import("../src/nodeViews.js");
+    const { proseMirrorSchemaFor } = await import("@nseaprotector/coelho-prosemirror");
+    const { EditorState } = await import("prosemirror-state");
+    const { EditorView } = await import("prosemirror-view");
+    const { Node: PMNode } = await import("prosemirror-model");
+    const pm = proseMirrorSchemaFor(schema);
+    const store = new NodeViewStore(() => schema);
+    let props: NodeViewProps | null = null;
+    const view = new EditorView(document.body.appendChild(document.createElement("div")), {
+      state: EditorState.create({ doc: PMNode.fromJSON(pm, callout) }),
+      nodeViews: store.constructors({ callout: (p: NodeViewProps) => ((props = p), null) }),
+    });
+    // The entry the store made for the callout, as a component would receive it.
+    const entry = store.getSnapshot()[0]!;
+    props = entry;
+    expect(() => props!.updateAttributes({ kind: "danger" })).toThrow(/callout.kind must be one of/);
+    expect(() => props!.updateAttributes({ colour: "red" })).toThrow(/no attribute "colour"/);
+    props.updateAttributes({ kind: "warning" });
+    expect(view.state.doc.firstChild?.attrs.kind).toBe("warning");
+    view.destroy();
+  });
+
+  test("events on the chrome's controls are the component's; elsewhere on it, ProseMirror's", async () => {
+    const { NodeViewStore } = await import("../src/nodeViews.js");
+    const { proseMirrorSchemaFor } = await import("@nseaprotector/coelho-prosemirror");
+    const { Node: PMNode } = await import("prosemirror-model");
+    const pm = proseMirrorSchemaFor(schema);
+    const store = new NodeViewStore(() => schema);
+    const node = PMNode.fromJSON(pm, callout).firstChild!;
+    const nodeView = store.constructors({ callout: () => null }).callout!(node, {} as never, () => 0, [] as never, {} as never);
+    const chrome = (nodeView.dom as HTMLElement).querySelector(".coelho-node-view-chrome") as HTMLElement;
+    const select = chrome.appendChild(document.createElement("select"));
+    const icon = chrome.appendChild(document.createElement("span"));
+    const at = (target: EventTarget): Event => {
+      const event = new Event("mousedown", { bubbles: true });
+      Object.defineProperty(event, "target", { value: target });
+      return event;
+    };
+    expect(nodeView.stopEvent?.(at(select))).toBe(true);
+    expect(nodeView.stopEvent?.(at(icon))).toBe(false);
+    expect(nodeView.stopEvent?.(at(nodeView.dom))).toBe(false);
+  });
+});
+

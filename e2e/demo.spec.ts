@@ -115,5 +115,21 @@ test("a callout: inserted from /, its text edited in place, its kind chosen in R
   await editor(page).locator(".coelho-node-view-content p").click();
   await page.keyboard.press("ControlOrMeta+Z");
   await expect(callout).toHaveAttribute("data-kind", "note");
+  // Only the kind: the text typed before it is still there.
+  await expect(callout.locator(".coelho-node-view-content")).toHaveText("Back up first.");
+  // The editor's element wears the page's classes, so one stylesheet serves both.
+  await expect(callout).toHaveClass(/\bcallout\b/);
+});
+
+test("an Obsidian callout pasted as Markdown arrives as a callout", async ({ page }) => {
+  await page.evaluate(() => navigator.clipboard.writeText("> [!tip]\n> Pasted from a vault."));
+  await caretAfter(page, "No HTML in the database.");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("ControlOrMeta+V");
+  const callout = editor(page).locator(".coelho-node-view-callout");
+  await expect(callout).toHaveAttribute("data-kind", "tip");
+  await expect(callout.locator(".coelho-node-view-content")).toHaveText("Pasted from a vault.");
+  await expect(panel(page, "Markdown")).toContainText("> [!tip]\n> Pasted from a vault.");
 });
 
