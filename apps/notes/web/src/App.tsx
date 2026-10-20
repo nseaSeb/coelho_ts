@@ -2,14 +2,14 @@ import { collab } from "@nseaprotector/coelho-collab";
 import { toHtml, type Document, type ValidationError } from "@nseaprotector/coelho-core";
 import { commentsPlugin, commentsState, createSuggestion, replaceSuggestion } from "@nseaprotector/coelho-prosemirror";
 import { SuggestionMenu, Toolbar, useCoelhoEditor, useSuggestion, type NodeViewProps } from "@nseaprotector/coelho-react";
-import { HocuspocusProvider } from "@hocuspocus/provider";
+import { HocuspocusProvider, HocuspocusProviderWebsocket } from "@hocuspocus/provider";
 import { Plugin } from "prosemirror-state";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { isPageName, schema } from "../../server/schema.js";
-import { api, currentUser, type Me } from "./api.js";
+import { api, collabUrl, currentUser, type Me } from "./api.js";
 import { People, SignIn } from "./Auth.js";
 import { History } from "./History.js";
-import { Comments, Discussion, useDiscussion } from "./Threads.js";
+import { Comments, Discussion } from "./Threads.js";
 import { Sidebar, type PageSummary } from "./Pages.js";
 
 // The schema comes from the server's own module: what this editor writes is what the server validates.
@@ -91,23 +91,13 @@ function Page({ name, me, pages, onReauthenticated }: { name: string; me: Me; pa
   const [discussion, setDiscussion] = useState<Discussion | null>(null);
   const [tab, setTab] = useState<SideTab>("page");
 
-  // The page's threads, in a room of their own the server alone writes to.
-  useEffect(() => {
-    const next = new Discussion(name, me);
-    setDiscussion(next);
-    return () => {
-      next.destroy();
-      setDiscussion(null);
-    };
-    // A new role remounts the page, and with it this.
-  }, [name]);
-
   // Created in an effect, not during render: StrictMode would otherwise
-  // open a second connection and never close it.
+  // open a second connection and never close it. One socket carries the
+  // page and its threads, a room of their own the server alone writes to.
   useEffect(() => {
-    const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/collab`;
+    const socket = new HocuspocusProviderWebsocket({ url: collabUrl() });
     const next = new HocuspocusProvider({
-      url,
+      websocketProvider: socket,
       name,
       onStatus: ({ status: now }) => setStatus(now as Status),
       onSynced: () => setSynced(true),
@@ -117,10 +107,16 @@ function Page({ name, me, pages, onReauthenticated }: { name: string; me: Me; pa
     });
     // The server stamps presence with the account anyway; this is what this tab shows meanwhile.
     next.setAwarenessField("user", { id: me.id, name: me.name, color: me.color });
+    next.attach();
+    const threads = new Discussion(name, me, socket);
     setProvider(next);
+    setDiscussion(threads);
     return () => {
+      threads.destroy();
       next.destroy();
+      socket.destroy();
       setProvider(null);
+      setDiscussion(null);
       setSynced(false);
     };
     // The account is fixed for this page's lifetime: a new role remounts it.
@@ -181,7 +177,6 @@ function Editor({ provider, readOnly: reading, pages, discussion, onComment }: E
     links.plugin,
   ]);
   const editor = useCoelhoEditor({ schema, setup, history: false, plugins, nodeViews });
-  useDiscussion(discussion);
   // The discussion acts on the editor, and hears which thread the editor has active.
   useEffect(() => {
     discussion.view = editor.view;

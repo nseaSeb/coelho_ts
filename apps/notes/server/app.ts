@@ -1,12 +1,12 @@
 import { FIELD, replace, seed, sharedThreads, snapshot, THREADS, type RelativeRange } from "@nseaprotector/coelho-collab";
-import { hash, isBlank, sanitize, toMarkdown, toText, validate, type Node } from "@nseaprotector/coelho-core";
+import { hash, isBlank, sanitize, toMarkdown, toText, validate, type Comment, type Node } from "@nseaprotector/coelho-core";
 import { Database } from "@hocuspocus/extension-database";
 import { Server, type Extension } from "@hocuspocus/server";
 import express from "express";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import * as Y from "yjs";
-import { commentSchema, firstPage, isPageName, linksOf, pageOfThreadsRoom, schema, threadsRoomOf } from "./schema.js";
+import { commentSchema, firstPage, isPageName, linksOf, roomOf, schema, threadsRoomOf } from "./schema.js";
 import { zip } from "./zip.js";
 import type { AccountStore, Role, User } from "./accounts.js";
 import { authRoutes, colorOf, userFrom } from "./auth.js";
@@ -121,14 +121,14 @@ export function createNotesServer(options: NotesServerOptions): Server {
       if (user === null) throw new Error("sign in first");
       // A room is a page, and a page has a name a link can hold; or it is
       // a page's threads, which every client reads and the server alone writes.
-      const discussion = pageOfThreadsRoom(documentName);
-      if (!isPageName(documentName) && discussion === null) throw new Error("not a page name");
-      if (user.role === "reader" || discussion !== null) connectionConfig.readOnly = true;
+      const room = roomOf(documentName);
+      if (room === null) throw new Error("not a page name");
+      if (user.role === "reader" || room.kind === "threads") connectionConfig.readOnly = true;
       return { user };
     },
     async onChange({ documentName, context }) {
       const user = (context as StoreContext | undefined)?.user;
-      if (user === undefined || pageOfThreadsRoom(documentName) !== null) return;
+      if (user === undefined || roomOf(documentName)?.kind !== "page") return;
       const names = writers.get(documentName) ?? new Set<string>();
       names.add(user.name);
       writers.set(documentName, names);
@@ -149,8 +149,8 @@ export function createNotesServer(options: NotesServerOptions): Server {
   const seeding: Extension = {
     priority: 50,
     async onLoadDocument({ document, documentName, context }) {
+      if (roomOf(documentName)?.kind !== "page") return;
       // An import writes the page itself: seeding it first would only be overwritten.
-      if (pageOfThreadsRoom(documentName) !== null) return;
       if (document.getXmlFragment(FIELD).length > 0 || (context as { importing?: boolean } | undefined)?.importing) return;
       seed(document, schema, firstPage(documentName));
       await persist(documentName, document, Y.encodeStateAsUpdate(document), {});
@@ -159,14 +159,17 @@ export function createNotesServer(options: NotesServerOptions): Server {
 
   const persistence = new Database({
     fetch: async ({ documentName }) => {
-      const discussion = pageOfThreadsRoom(documentName);
-      return discussion === null ? store.load(documentName) : store.loadThreads(discussion);
+      const room = roomOf(documentName);
+      if (room === null) throw new Error("not a room");
+      return room.kind === "page" ? store.load(room.page) : store.loadThreads(room.page);
     },
     store: async ({ documentName, document, state, lastContext }) => {
-      const discussion = pageOfThreadsRoom(documentName);
-      if (discussion === null) return persist(documentName, document, state, (lastContext as StoreContext | undefined) ?? {});
-      // The threads as JSON beside the state, read back as every client reads them.
-      await store.saveThreads(discussion, state, sharedThreads(document, "", { bodies: commentSchema }).list());
+      const room = roomOf(documentName);
+      if (room === null) return;
+      if (room.kind === "page") return persist(room.page, document, state, (lastContext as StoreContext | undefined) ?? {});
+      // The threads as JSON beside the state, for the API. Only the server
+      // writes this room, and it repaired every body as it wrote it.
+      await store.saveThreads(room.page, state, sharedThreads(document, "").list());
     },
   });
 
@@ -191,15 +194,24 @@ export function createNotesServer(options: NotesServerOptions): Server {
     }),
   );
   app.use(["/api/pages", "/api/export", "/api/search"], async (request, response, next) => {
-    if ((await userFrom(accounts, request.headers.cookie)) === null) response.status(401).json({ error: "sign in first" });
-    else next();
+    const user = await userFrom(accounts, request.headers.cookie);
+    if (user === null) return void response.status(401).json({ error: "sign in first" });
+    response.locals.user = user;
+    next();
+  });
+  // Every route under a page takes a page's name, and nothing else: no
+  // room is opened, and nothing stored, under any other.
+  app.param("name", (_request, response, next, name: unknown) => {
+    if (isPageName(name)) next();
+    else response.status(400).json({ error: "not a page name" });
   });
   app.get("/api/pages", async (_request, response) => {
     response.json(await store.list());
   });
   // The vault: one Markdown file per page, in folders, links as Obsidian writes them.
   app.get("/api/export", async (_request, response) => {
-    const pages = await store.all();
+    // A name that is not a page's would be a path out of the folder it is unzipped in.
+    const pages = (await store.all()).filter((page) => isPageName(page.name));
     const files = pages.map((page) => ({
       path: `${page.name}.md`,
       data: Buffer.from(`${toMarkdown(page.body, schema, { nodes: { page_link: (node) => `[[${String(node.attrs?.name)}]]` } })}\n`, "utf8"),
@@ -219,7 +231,7 @@ export function createNotesServer(options: NotesServerOptions): Server {
   // change, and it is stored as anyone's change is, under who imported it.
   // The session is checked before the body, the only large one, is read.
   const editorOnly: express.RequestHandler = async (request, response, next) => {
-    const user = await userFrom(accounts, request.headers.cookie);
+    const user = (response.locals.user as User | undefined) ?? (await userFrom(accounts, request.headers.cookie));
     if (user === null) return void response.status(401).json({ error: "sign in first" });
     if (user.role === "reader") return void response.status(403).json({ error: "readers cannot change pages" });
     response.locals.user = user;
@@ -260,13 +272,6 @@ export function createNotesServer(options: NotesServerOptions): Server {
   // Anyone signed in may comment, a reader too; the thread's author, an
   // editor or an admin may resolve or delete it.
 
-  const signedIn: express.RequestHandler = async (request, response, next) => {
-    const user = await userFrom(accounts, request.headers.cookie);
-    if (user === null) return void response.status(401).json({ error: "sign in first" });
-    response.locals.user = user;
-    next();
-  };
-
   /** A comment body, repaired; `null` when nothing is left to say. */
   const commentBody = (raw: unknown): Node | null => {
     const body = sanitize(raw, commentSchema);
@@ -305,11 +310,19 @@ export function createNotesServer(options: NotesServerOptions): Server {
 
   const mayManage = (user: User, thread: Y.Map<unknown>): boolean => user.role !== "reader" || thread.get("authorId") === user.id;
 
-  app.get("/api/pages/:name/threads", signedIn, async (request, response) => {
+  const commentBy = (user: User, body: Node): Comment => ({ id: `c_${randomUUID()}`, author: user.name, createdAt: new Date().toISOString(), body });
+
+  const refusals: Record<number, string> = { 403: "only its author, an editor or an admin", 404: "no such thread", 409: "this thread is full" };
+  const answer = (response: express.Response, outcome: number): void => {
+    if (outcome === 204) response.status(204).end();
+    else response.status(outcome).json(outcome < 300 ? {} : { error: refusals[outcome] });
+  };
+
+  app.get("/api/pages/:name/threads", async (request, response) => {
     response.json(await store.threads(String(request.params.name)));
   });
 
-  app.post("/api/pages/:name/threads", signedIn, async (request, response) => {
+  app.post("/api/pages/:name/threads", async (request, response) => {
     const name = String(request.params.name);
     const user = response.locals.user as User;
     const { anchor, range, body } = (request.body ?? {}) as Record<string, unknown>;
@@ -318,10 +331,10 @@ export function createNotesServer(options: NotesServerOptions): Server {
     const suffix = text((anchor as Record<string, unknown> | undefined)?.suffix ?? "", 200);
     const where = rangeOf(range);
     const first = commentBody(body);
-    if (!isPageName(name) || quote === null || quote === "" || prefix === null || suffix === null || where === null || first === null) {
+    if (quote === null || quote === "" || prefix === null || suffix === null || where === null || first === null) {
       return void response.status(400).json({ error: "a page, a quote, a range and something to say" });
     }
-    const id = `t_${randomUUID().slice(0, 8)}`;
+    const id = `t_${randomUUID()}`;
     const made = await inThreads(name, user, (doc) => {
       const threads = doc.getMap<unknown>(THREADS);
       if (threads.size >= 500) return false;
@@ -330,14 +343,14 @@ export function createNotesServer(options: NotesServerOptions): Server {
       const thread = threadOf(doc, id) as Y.Map<unknown>;
       thread.set("range", where);
       thread.set("authorId", user.id);
-      shared.reply(id, { id: `c_${randomUUID().slice(0, 8)}`, author: user.name, createdAt: new Date().toISOString(), body: first });
+      shared.reply(id, commentBy(user, first));
       return true;
     });
     if (!made) return void response.status(409).json({ error: "this page has as many threads as it can hold" });
     response.status(201).json({ id });
   });
 
-  app.post("/api/pages/:name/threads/:id/comments", signedIn, async (request, response) => {
+  app.post("/api/pages/:name/threads/:id/comments", async (request, response) => {
     const user = response.locals.user as User;
     const body = commentBody((request.body as Record<string, unknown> | undefined)?.body);
     if (body === null) return void response.status(400).json({ error: "something to say" });
@@ -346,13 +359,13 @@ export function createNotesServer(options: NotesServerOptions): Server {
       if (thread === null) return 404;
       const comments = thread.get("comments");
       if (comments instanceof Y.Array && comments.length >= 500) return 409;
-      sharedThreads(doc, user.name).reply(String(request.params.id), { id: `c_${randomUUID().slice(0, 8)}`, author: user.name, createdAt: new Date().toISOString(), body });
+      sharedThreads(doc, user.name).reply(String(request.params.id), commentBy(user, body));
       return 201;
     });
-    response.status(outcome).json(outcome === 201 ? {} : { error: outcome === 404 ? "no such thread" : "this thread is full" });
+    answer(response, outcome);
   });
 
-  app.patch("/api/pages/:name/threads/:id", signedIn, async (request, response) => {
+  app.patch("/api/pages/:name/threads/:id", async (request, response) => {
     const user = response.locals.user as User;
     const resolved = (request.body as Record<string, unknown> | undefined)?.resolved;
     if (typeof resolved !== "boolean") return void response.status(400).json({ error: "resolved: true or false" });
@@ -363,10 +376,10 @@ export function createNotesServer(options: NotesServerOptions): Server {
       thread.set("resolved", resolved);
       return 200;
     });
-    response.status(outcome).json(outcome === 200 ? {} : { error: outcome === 404 ? "no such thread" : "only its author, an editor or an admin" });
+    answer(response, outcome);
   });
 
-  app.delete("/api/pages/:name/threads/:id", signedIn, async (request, response) => {
+  app.delete("/api/pages/:name/threads/:id", async (request, response) => {
     const user = response.locals.user as User;
     const outcome = await inThreads(String(request.params.name), user, (doc) => {
       const thread = threadOf(doc, String(request.params.id));
@@ -375,8 +388,7 @@ export function createNotesServer(options: NotesServerOptions): Server {
       doc.getMap<unknown>(THREADS).delete(String(request.params.id));
       return 204;
     });
-    if (outcome === 204) response.status(204).end();
-    else response.status(outcome).json({ error: outcome === 404 ? "no such thread" : "only its author, an editor or an admin" });
+    answer(response, outcome);
   });
 
   app.get("/api/pages/:name/versions", async (request, response) => {

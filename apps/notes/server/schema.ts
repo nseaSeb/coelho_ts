@@ -94,9 +94,15 @@ export function threadsRoomOf(name: string): string {
   return `${name}${THREADS_ROOM}`;
 }
 
-/** The page a threads room belongs to, or `null` for a room that is not one. */
-export function pageOfThreadsRoom(room: string): string | null {
-  if (!room.endsWith(THREADS_ROOM)) return null;
-  const name = room.slice(0, -THREADS_ROOM.length);
-  return isPageName(name) ? name : null;
+/**
+ * What a room is: a page, a page's threads, or nothing the server serves.
+ * Every hook asks this once, so no room is ever taken for a page because
+ * one of them forgot to ask: `../x::threads` is neither.
+ */
+export type Room = { kind: "page"; page: string } | { kind: "threads"; page: string };
+
+export function roomOf(room: string): Room | null {
+  if (!room.endsWith(THREADS_ROOM)) return isPageName(room) ? { kind: "page", page: room } : null;
+  const page = room.slice(0, -THREADS_ROOM.length);
+  return isPageName(page) ? { kind: "threads", page } : null;
 }

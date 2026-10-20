@@ -1,7 +1,7 @@
 import { relativeAnchors, sharedThreads, THREADS, type RelativeRange, type SharedThread, type SharedThreads } from "@nseaprotector/coelho-collab";
 import { toHtml, type Anchor, type Node } from "@nseaprotector/coelho-core";
 import { addComment, commentsState, relocateComments, removeComment, selectComment, setActiveComment, type AnchorSource } from "@nseaprotector/coelho-prosemirror";
-import { HocuspocusProvider } from "@hocuspocus/provider";
+import { HocuspocusProvider, type HocuspocusProviderWebsocket } from "@hocuspocus/provider";
 import type { EditorView } from "prosemirror-view";
 import { useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
 import * as Y from "yjs";
@@ -44,12 +44,14 @@ export class Discussion {
   private readonly listeners = new Set<() => void>();
   private version = 0;
 
+  /** `socket` is the page's own: the threads come over the same connection. */
   constructor(
     readonly name: string,
     readonly me: Me,
+    socket: HocuspocusProviderWebsocket,
   ) {
-    const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/collab`;
-    this.provider = new HocuspocusProvider({ url, name: threadsRoomOf(name) });
+    this.provider = new HocuspocusProvider({ websocketProvider: socket, name: threadsRoomOf(name) });
+    this.provider.attach();
     this.shared = sharedThreads(this.provider.document, me.name, { bodies: commentSchema });
     const map = this.provider.document.getMap<unknown>(THREADS);
     const anchors = relativeAnchors({
@@ -60,10 +62,17 @@ export class Discussion {
       // A new thread's range stays here until the server has it.
       set: (id, range) => void this.pending.set(id, range),
     });
+    // Asked on every change to the page, someone else's typing included:
+    // where each thread is and whether it is open, never its comments.
+    const text = (value: unknown): string => (typeof value === "string" ? value : "");
     this.source = {
       ...anchors,
       threads: () => [
-        ...this.shared.list().map(({ id, anchor, resolved }) => ({ id, anchor, resolved })),
+        ...[...map.entries()].flatMap(([id, entry]) =>
+          entry instanceof Y.Map
+            ? [{ id, anchor: { from: 0, to: 0, quote: text(entry.get("quote")), prefix: text(entry.get("prefix")), suffix: text(entry.get("suffix")) }, resolved: entry.get("resolved") === true }]
+            : [],
+        ),
         ...[...this.drafts].map(([id, draft]) => ({ id, anchor: draft.anchor, resolved: false })),
       ],
     };
@@ -127,7 +136,8 @@ export class Discussion {
   async submitDraft(id: string, text: string): Promise<void> {
     const draft = this.drafts.get(id);
     const range = this.pending.get(id);
-    if (draft === undefined || range === undefined) return;
+    // Kept, with what was typed, for the person to try again.
+    if (draft === undefined || range === undefined) throw new ApiError("this comment lost its place in the page: select the words again");
     const { quote, prefix = "", suffix = "" } = draft.anchor;
     const { id: created } = await api<{ id: string }>(path(this.name), { body: { anchor: { quote, prefix, suffix }, range, body: bodyOf(text) } });
     this.cancelDraft(id);

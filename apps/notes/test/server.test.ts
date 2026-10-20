@@ -559,6 +559,54 @@ describe("comment threads", () => {
     await until(() => threadsOf(watching).length === 0);
   });
 
+  test("take a page's name, nothing else: no room, no page and no export entry for anything else", async () => {
+    const { http, store } = await start();
+    await signUp(http, "Ada");
+    // A reader: the second account.
+    const sam = await signUp(http, "Sam");
+    const bad = encodeURIComponent("../../x");
+    const statuses: number[] = [];
+    for (const [method, path, payload] of [
+      ["GET", `/api/pages/${bad}/threads`, undefined],
+      ["POST", `/api/pages/${bad}/threads/t_1/comments`, { body: body("x") }],
+      ["PATCH", `/api/pages/${bad}/threads/t_1`, { resolved: true }],
+      ["DELETE", `/api/pages/${bad}/threads/t_1`, {}],
+    ] as const) {
+      statuses.push((await call(http, path, { method, body: payload, cookie: sam })).status);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Before, a reader's reply here seeded and stored a page called "../../x::threads".
+    expect((await store.list()).map((page) => page.name)).toEqual([]);
+    expect(statuses).toEqual([400, 400, 400, 400]);
+  });
+
+  test("an export leaves out a stored name that is not a page's", async () => {
+    const store = memoryStore();
+    await store.save({ name: "../../evil", body: { type: "doc", content: [{ type: "paragraph" }] }, hash: null, text: "", errors: [], updatedBy: null, links: [] }, new Uint8Array());
+    const { http } = await start(store);
+    const response = await call(http, "/api/export", { cookie: await signUp(http, "Ada") });
+    expect(Buffer.from(await response.arrayBuffer()).toString("latin1")).not.toContain("evil");
+  });
+
+  test("ids are whole UUIDs, not 32 bits that could land on an existing thread", async () => {
+    const { url, http } = await start();
+    const ada = await signUp(http, "Ada");
+    const watching = await open(url, "page::threads", ada);
+    const { id } = (await (await call(http, "/api/pages/page/threads", { body: { anchor: { quote: "q" }, range, body: body("x") }, cookie: ada })).json()) as { id: string };
+    expect(id).toMatch(/^t_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    await until(() => threadsOf(watching).length === 1);
+    expect((threadsOf(watching)[0]?.comments[0] as { id?: string } | undefined)?.id).toMatch(/^c_[0-9a-f-]{36}$/);
+  });
+
+  test("look a session up once per request", async () => {
+    const accounts = memoryAccounts();
+    const { http } = await start(memoryStore(), accounts);
+    const ada = await signUp(http, "Ada");
+    const lookup = vi.spyOn(accounts, "sessionUser");
+    await call(http, "/api/pages/page/threads", { body: { anchor: { quote: "q" }, range, body: body("x") }, cookie: ada });
+    expect(lookup).toHaveBeenCalledTimes(1);
+  });
+
   test("a threads room is only a page's: one for something else is refused", async () => {
     const { url, http } = await start();
     await expect(open(url, "../x::threads", await signUp(http, "Ada"))).rejects.toThrow(/refused/);

@@ -10,6 +10,11 @@ export interface Me {
 
 export class ApiError extends Error {}
 
+/** Where the pages and their threads are served, on this origin. */
+export function collabUrl(): string {
+  return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/collab`;
+}
+
 /** JSON in, JSON out, the session in a cookie the page cannot read. */
 export async function api<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   const response = await fetch(path, {
