@@ -1,6 +1,6 @@
 {
   "name": "@nseaprotector/coelho-core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Structured rich text you own: a schema, strict validation, a canonical JSON form and its hash, sanitize, safe HTML, Markdown and plain text. No editor, no DOM, no dependency.",
   "keywords": [
     "rich-text",

@@ -1,6 +1,6 @@
 {
   "name": "@nseaprotector/coelho-react",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A React rich text editor on ProseMirror: a controlled component and hook, StrictMode-safe, React components as node views, suggestion menus for @mentions and / commands.",
   "keywords": [
     "react",
