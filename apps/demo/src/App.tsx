@@ -1,4 +1,4 @@
-import { canonical, defaultSchema, escape, extendSchema, hash, isBlank, reanchor, sanitize, tag, textLength, toHtml, toText, validate, type Node, type Thread } from "@coelho/core";
+import { canonical, defaultSchema, escape, extendSchema, hash, isBlank, reanchor, sanitize, tag, textLength, toHtml, toMarkdown, toText, validate, type Node, type Thread } from "@coelho/core";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { CommentedEditor, type LiveThread } from "./Comments.js";
 
@@ -202,6 +202,9 @@ export function App(): ReactNode {
         </Panel>
         <Panel title="What the threads table holds" hint="beside the document, never inside it: the hash above does not move when you comment">
           <pre>{JSON.stringify(liveThreads.map(({ orphaned, ...thread }) => ({ ...thread, ...(orphaned ? { orphaned } : {}) })), null, 2)}</pre>
+        </Panel>
+        <Panel title="Markdown" hint="toMarkdown(doc, schema) — and Markdown pasted into the editor arrives formatted (Shift-paste keeps it plain)">
+          <pre>{stored === null ? "" : toMarkdown(stored, schema)}</pre>
         </Panel>
         <Panel title="Plain text for a search index" hint="toText(doc, schema)">
           <pre>{stored === null ? "" : toText(stored, schema)}</pre>

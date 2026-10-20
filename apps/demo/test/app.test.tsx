@@ -181,4 +181,13 @@ describe("the demo", () => {
     const page = [...container.querySelectorAll(".panel")].find((p) => p.textContent?.startsWith("Rendered HTML"));
     expect(page?.querySelector('span.mention[data-mention="u_camille"]')?.textContent).toBe("@Camille Durand");
   });
+
+  test("writes the stored document as Markdown", () => {
+    const container = mount();
+    const panel = [...container.querySelectorAll(".panel")].find((p) => p.textContent?.startsWith("Markdown"));
+    const markdown = panel?.querySelector("pre")?.textContent ?? "";
+    expect(markdown.startsWith("## The document is the storage.\n\nWhat you type here is stored as **JSON**")).toBe(true);
+    expect(markdown).toContain("[link](<https://example.test/?a=1&#38;b=2>)");
+    expect(markdown).toContain("@Camille Durand");
+  });
 });

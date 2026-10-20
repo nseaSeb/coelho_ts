@@ -26,8 +26,8 @@ sits behind the editor. This project separates the two:
 
 | Package | What | Status |
 | --- | --- | --- |
-| `@coelho/core` | schema, `validate`, `sanitize`, `canonical`, `hash`, `toHtml`, `toInlineHtml`, `toText`, `isBlank`, trusted/untrusted rendering policy, anchors | `validate`, `canonical`, `hash`, `toHtml` and `toText` byte for byte with coelho's corpus; `sanitize` ported with coelho's own test suite |
-| `@coelho/prosemirror` | coelho schema → ProseMirror `Schema`, editing plugins, anchored comments, suggestion triggers | working |
+| `@coelho/core` | schema, `validate`, `sanitize`, `canonical`, `hash`, `toHtml`, `toInlineHtml`, `toText`, `toMarkdown`, `isBlank`, trusted/untrusted rendering policy, anchors | `validate`, `canonical`, `hash`, `toHtml` and `toText` byte for byte with coelho's corpus; `sanitize` ported with coelho's own test suite |
+| `@coelho/prosemirror` | coelho schema → ProseMirror `Schema`, editing plugins, anchored comments, suggestion triggers, `fromHtml`, `fromMarkdown`, Markdown paste | working |
 | `@coelho/react` | `<CoelhoEditor>`, `useCoelhoEditor`, default toolbar, React node views, `useSuggestion` and `<SuggestionMenu>` | working |
 
 `apps/demo` (`pnpm --filter coelho-demo dev`, http://localhost:5180) shows
@@ -88,6 +88,30 @@ const schema = extendSchema(defaultSchema(), {
   marks: { highlight: { class: "hl", render: ["mark", []] } },
 });
 ```
+
+## Markdown
+
+`toMarkdown` (in `@coelho/core`, no dependency) writes CommonMark with
+GitHub's tables and strikethrough. Every character a writer typed comes
+back as that character: what Markdown would read as syntax is escaped, a
+mark is written with `**`, `*` or `~~` only where CommonMark is certain to
+read them as delimiters and as `<strong>`, `<em>`, `<del>` otherwise, and
+what Markdown cannot say (a cell holding a list, a heading holding a line
+break) is written as HTML. Your own nodes and marks take overrides.
+
+`fromMarkdown` and `fromHtml` (in `@coelho/prosemirror`, they need a DOM)
+go the other way through the schema's own parse rules, on an inert
+document: nothing in the HTML runs or loads. `markdownPaste()` makes
+pasted plain text arrive formatted; Shift-paste keeps it plain.
+
+The tests are coelho's, with its oracle: a document's Markdown, read back,
+has to equal its HTML read back through the same import, so the only
+differences left are the Markdown's. Every string coelho pins comes out
+identical here, and the property holds on 5,000 generated documents made
+mostly of syntax (`MARKDOWN_SEEDS=5000 pnpm test`). Two things had to be
+fixed on the way, neither in the writer: markdown-it drops escaped
+characters from an image's alt text, and ProseMirror's parser moves a
+block out of a list item that does not open with its paragraph.
 
 ## React inside the editor
 
@@ -183,12 +207,12 @@ Node 20+, pnpm 10.
 
 ## Roadmap
 
-Done: the storage layer with parity, `sanitize`, the ProseMirror adapter,
+Done: the storage layer with parity, `sanitize`, Markdown both ways, the ProseMirror adapter,
 the controlled React editor (StrictMode-safe: every jsdom test mounts
 under StrictMode), React node views, suggestions, anchored comments.
 
-1. `@coelho/core`: Markdown rendering, `toJSON` of the schema in the
-   shape coelho's browser hook expects.
+1. `@coelho/core`: `toJSON` of the schema in the shape coelho's browser
+   hook expects.
 2. Node views with editable content (only leaf nodes today).
 3. Comments: render threads on the page (`toHtml` with highlights),
    mentions in comment bodies.

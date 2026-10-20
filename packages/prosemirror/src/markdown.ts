@@ -1,0 +1,122 @@
+import { sanitize, type Document, type Schema as CoelhoSchema } from "@coelho/core";
+import MarkdownIt from "markdown-it";
+import { DOMParser, Slice, type Schema } from "prosemirror-model";
+import { Plugin } from "prosemirror-state";
+import { toProseMirrorSchema } from "./schema.js";
+
+const schemas = new WeakMap<CoelhoSchema, Schema>();
+
+function pmSchemaFor(schema: CoelhoSchema): Schema {
+  let pm = schemas.get(schema);
+  if (pm === undefined) {
+    pm = toProseMirrorSchema(schema);
+    schemas.set(schema, pm);
+  }
+  return pm;
+}
+
+/**
+ * Parses HTML into an inert document: no script runs, no image loads, no
+ * handler fires. Setting `innerHTML` on an element of the page instead
+ * would fetch `<img src onerror>` the moment it is parsed.
+ */
+function inert(html: string): HTMLElement {
+  const parsed = new globalThis.DOMParser().parseFromString(`<!doctype html><body>${html}`, "text/html");
+  return parsed.body;
+}
+
+/**
+ * Imports HTML under the schema: what the schema's parse rules recognise is
+ * kept, everything else is dropped, and the result is a document the
+ * schema accepts. Needs a DOM (a browser, or jsdom).
+ */
+export function fromHtml(html: string, schema: CoelhoSchema): Document {
+  const body = inert(html);
+  openRequiredFirst(body, schema);
+  const doc = DOMParser.fromSchema(pmSchemaFor(schema)).parse(body);
+  // Reading, not writing: the length bounds are not this import's to apply.
+  return sanitize(doc.toJSON(), schema, { limits: { maxTextLength: Infinity, maxAttrLength: Infinity } });
+}
+
+/**
+ * A node whose content must begin with a given node — a list item with its
+ * paragraph — gets an empty one when the HTML opens it with another block:
+ * `<li><hr></li>` is an item holding an empty paragraph and a rule, as the
+ * editor would hold it. Left alone, ProseMirror's parser would close the
+ * item and put the rule after the list.
+ */
+function openRequiredFirst(root: HTMLElement, schema: CoelhoSchema): void {
+  const tagsOf = (rules: ReadonlyArray<string | readonly [string, unknown]>): string[] => rules.map((rule) => (typeof rule === "string" ? rule : rule[0]));
+  const blockTags = new Set<string>();
+  for (const spec of schema.nodes.values()) if (!spec.inline) for (const tag of tagsOf(spec.parse)) blockTags.add(tag.toUpperCase());
+  for (const spec of schema.nodes.values()) {
+    const ast = schema.content.get(spec.name);
+    const first = ast?.kind === "seq" ? ast.items[0] : undefined;
+    if (first?.kind !== "name" || !schema.nodes.has(first.name)) continue;
+    const childTag = tagsOf((schema.nodes.get(first.name) as { parse: Array<string | [string, unknown]> }).parse)[0];
+    if (childTag === undefined) continue;
+    for (const tag of tagsOf(spec.parse)) {
+      for (const element of Array.from(root.querySelectorAll(tag))) {
+        let opening: ChildNode | null = element.firstChild;
+        while (opening !== null && opening.nodeType === 3 && (opening.textContent ?? "").trim() === "") opening = opening.nextSibling;
+        if (opening === null || opening.nodeType !== 1) continue;
+        const name = (opening as Element).tagName;
+        if (name !== childTag.toUpperCase() && blockTags.has(name)) element.insertBefore(element.ownerDocument.createElement(childTag), opening);
+      }
+    }
+  }
+}
+
+// CommonMark, with GitHub's tables and strikethrough, and HTML passed
+// through to the import, which decides what of it the schema keeps.
+const markdownIt = new MarkdownIt("default", { html: true, linkify: false, typographer: false });
+// markdown-it refuses `javascript:` links by leaving their Markdown as text.
+// The schema refuses them too, keeping the link's words: let it decide, as
+// it does for every other import.
+markdownIt.validateLink = () => true;
+// An image's alt is the plain text of its description. markdown-it 14 drops
+// what was escaped in it (`\<`, `\``), which its parser leaves as
+// `text_special` tokens that its own renderInlineAsText skips; and a code
+// span's text belongs to the alt too.
+type InlineToken = { type: string; content: string; children: InlineToken[] | null };
+markdownIt.renderer.renderInlineAsText = function renderInlineAsText(tokens: InlineToken[]): string {
+  let text = "";
+  for (const token of tokens) {
+    if (token.type === "image") text += renderInlineAsText(token.children ?? []);
+    else if (token.type === "softbreak" || token.type === "hardbreak") text += "\n";
+    else if (["text", "text_special", "code_inline", "html_inline", "html_block"].includes(token.type)) text += token.content;
+  }
+  return text;
+} as typeof markdownIt.renderer.renderInlineAsText;
+
+function markdownToHtml(markdown: string): string {
+  // A hard line break's newline would read as a space at the start of the
+  // next line, and a fenced block's content always ends with a newline
+  // that is the fence's, not the code's.
+  return markdownIt.render(markdown).replaceAll("<br>\n", "<br>").replace(/\n<\/code><\/pre>/g, "</code></pre>");
+}
+
+/**
+ * Markdown to a document, through HTML: the schema decides what is kept
+ * exactly as it does for imported HTML. The inverse of `toMarkdown` from
+ * `@coelho/core`, up to what Markdown cannot say.
+ */
+export function fromMarkdown(markdown: string, schema: CoelhoSchema): Document {
+  return fromHtml(markdownToHtml(markdown), schema);
+}
+
+/**
+ * Pasting plain text reads it as Markdown, so `**bold**` and `- items`
+ * arrive formatted. Shift-paste keeps it plain, as ProseMirror does.
+ */
+export function markdownPaste(): Plugin {
+  return new Plugin({
+    props: {
+      clipboardTextParser: (text, $context, plain) => {
+        if (plain) return null as unknown as Slice;
+        const schema = $context.doc.type.schema;
+        return DOMParser.fromSchema(schema).parseSlice(inert(markdownToHtml(text)), { context: $context });
+      },
+    },
+  });
+}

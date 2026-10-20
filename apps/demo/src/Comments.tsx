@@ -1,5 +1,5 @@
 import { defineSchema, isBlank, toHtml, validate, type Node, type Thread } from "@coelho/core";
-import { addComment, commentsPlugin, commentsState, createSuggestion, removeComment, selectComment, setActiveComment, setCommentResolved } from "@coelho/prosemirror";
+import { addComment, commentsPlugin, commentsState, createSuggestion, markdownPaste, removeComment, selectComment, setActiveComment, setCommentResolved } from "@coelho/prosemirror";
 import { CoelhoEditor, Toolbar, useCoelhoEditor } from "@coelho/react";
 import type { Schema } from "@coelho/core";
 import type { Command } from "prosemirror-state";
@@ -59,6 +59,7 @@ export function CommentedEditor({ schema, value, onChange, threads, onThreadsCha
   const [plugins] = useState(() => [
     commentsPlugin({ schema, restore: () => live.current.map(({ id, anchor, resolved, orphaned }) => ({ id, anchor, resolved, lost: orphaned })) }),
     suggestion.plugin,
+    markdownPaste(),
   ]);
   const editor = useCoelhoEditor({ schema, value, onChange, plugins, nodeViews });
   const [author, setAuthor] = useState(AUTHORS[0] as string);

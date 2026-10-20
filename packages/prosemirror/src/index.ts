@@ -22,3 +22,4 @@ export {
   type SuggestionKeys,
   type SuggestionMatch,
 } from "./suggestion.js";
+export { fromHtml, fromMarkdown, markdownPaste } from "./markdown.js";
