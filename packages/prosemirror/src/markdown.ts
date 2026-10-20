@@ -1,4 +1,4 @@
-import { sanitize, type Document, type Schema as CoelhoSchema } from "@coelho/core";
+import { sanitize, type Document, type Schema as CoelhoSchema } from "@nseaprotector/coelho-core";
 import MarkdownIt from "markdown-it";
 import { DOMParser, Slice, type Fragment } from "prosemirror-model";
 import { Plugin } from "prosemirror-state";
@@ -88,7 +88,7 @@ function markdownToHtml(markdown: string): string {
 /**
  * Markdown to a document, through HTML: the schema decides what is kept
  * exactly as it does for imported HTML. The inverse of `toMarkdown` from
- * `@coelho/core`, up to what Markdown cannot say.
+ * `@nseaprotector/coelho-core`, up to what Markdown cannot say.
  */
 export function fromMarkdown(markdown: string, schema: CoelhoSchema): Document {
   return fromHtml(markdownToHtml(markdown), schema);

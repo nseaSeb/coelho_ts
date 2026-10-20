@@ -59,16 +59,16 @@ importers:
 
   apps/demo:
     dependencies:
-      '@coelho/collab':
+      '@nseaprotector/coelho-collab':
         specifier: workspace:*
         version: link:../../packages/collab
-      '@coelho/core':
+      '@nseaprotector/coelho-core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@coelho/prosemirror':
+      '@nseaprotector/coelho-prosemirror':
         specifier: workspace:*
         version: link:../../packages/prosemirror
-      '@coelho/react':
+      '@nseaprotector/coelho-react':
         specifier: workspace:*
         version: link:../../packages/react
       prosemirror-view:
@@ -102,10 +102,10 @@ importers:
 
   packages/collab:
     dependencies:
-      '@coelho/core':
+      '@nseaprotector/coelho-core':
         specifier: workspace:*
         version: link:../core
-      '@coelho/prosemirror':
+      '@nseaprotector/coelho-prosemirror':
         specifier: workspace:*
         version: link:../prosemirror
       prosemirror-keymap:
@@ -135,7 +135,7 @@ importers:
 
   packages/prosemirror:
     dependencies:
-      '@coelho/core':
+      '@nseaprotector/coelho-core':
         specifier: workspace:*
         version: link:../core
       markdown-it:
@@ -181,10 +181,10 @@ importers:
 
   packages/react:
     dependencies:
-      '@coelho/core':
+      '@nseaprotector/coelho-core':
         specifier: workspace:*
         version: link:../core
-      '@coelho/prosemirror':
+      '@nseaprotector/coelho-prosemirror':
         specifier: workspace:*
         version: link:../prosemirror
       prosemirror-model:

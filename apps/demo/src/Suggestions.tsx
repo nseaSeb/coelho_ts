@@ -1,5 +1,5 @@
-import { clearSuggestion, replaceSuggestion, setBlockType, wrapIn, wrapInList, type SuggestionKeys, type SuggestionMatch } from "@coelho/prosemirror";
-import { SuggestionMenu, useSuggestion, type CoelhoEditorHandle, type NodeViewProps } from "@coelho/react";
+import { clearSuggestion, replaceSuggestion, setBlockType, wrapIn, wrapInList, type SuggestionKeys, type SuggestionMatch } from "@nseaprotector/coelho-prosemirror";
+import { SuggestionMenu, useSuggestion, type CoelhoEditorHandle, type NodeViewProps } from "@nseaprotector/coelho-react";
 import type { Schema } from "prosemirror-model";
 import type { Command } from "prosemirror-state";
 import type { ReactNode } from "react";

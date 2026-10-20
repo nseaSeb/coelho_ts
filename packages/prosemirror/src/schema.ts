@@ -11,7 +11,7 @@ import {
   type Schema as CoelhoSchema,
   type ValidationError,
   type Validator,
-} from "@coelho/core";
+} from "@nseaprotector/coelho-core";
 import { Node, Schema, type AttributeSpec, type DOMOutputSpec, type MarkSpec, type NodeSpec, type TagParseRule } from "prosemirror-model";
 
 // A node the editor cannot draw from a static `render` declaration, or that
@@ -22,7 +22,7 @@ const DATA_ATTRS = "data-coelho-attrs";
 
 /**
  * Builds the ProseMirror schema a coelho schema describes. The document the
- * editor produces (`doc.toJSON()`) is what `validate` from `@coelho/core`
+ * editor produces (`doc.toJSON()`) is what `validate` from `@nseaprotector/coelho-core`
  * accepts, and `toDOM` is derived from the same `render` declaration the
  * page uses, so the editor shows what the page will show.
  */

@@ -1,7 +1,7 @@
-import { defineSchema, isBlank, toHtml, validate, type Node, type Thread } from "@coelho/core";
-import { addComment, commentsPlugin, commentsState, createSuggestion, markdownPaste, removeComment, selectComment, setActiveComment, setCommentResolved } from "@coelho/prosemirror";
-import { CoelhoEditor, Toolbar, useCoelhoEditor } from "@coelho/react";
-import type { Schema } from "@coelho/core";
+import { defineSchema, isBlank, toHtml, validate, type Node, type Thread } from "@nseaprotector/coelho-core";
+import { addComment, commentsPlugin, commentsState, createSuggestion, markdownPaste, removeComment, selectComment, setActiveComment, setCommentResolved } from "@nseaprotector/coelho-prosemirror";
+import { CoelhoEditor, Toolbar, useCoelhoEditor } from "@nseaprotector/coelho-react";
+import type { Schema } from "@nseaprotector/coelho-core";
 import type { Command } from "prosemirror-state";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { MentionChip, Suggestions } from "./Suggestions.js";

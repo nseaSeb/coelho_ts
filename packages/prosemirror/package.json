@@ -1,5 +1,5 @@
 {
-  "name": "@coelho/prosemirror",
+  "name": "@nseaprotector/coelho-prosemirror",
   "version": "0.1.0",
   "description": "A coelho schema as a ProseMirror schema, with the editing plugins the Phoenix hook ships.",
   "license": "MIT",
@@ -18,7 +18,7 @@
     "build": "tsc -b"
   },
   "dependencies": {
-    "@coelho/core": "workspace:*",
+    "@nseaprotector/coelho-core": "workspace:*",
     "prosemirror-commands": "1.7.2",
     "prosemirror-dropcursor": "1.8.4",
     "prosemirror-gapcursor": "1.4.1",

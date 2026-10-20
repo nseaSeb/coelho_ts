@@ -1,4 +1,4 @@
-import type { Node } from "@coelho/core";
+import type { Node } from "@nseaprotector/coelho-core";
 
 // Documents made mostly of what Markdown reads as syntax, for the Markdown
 // properties and for the export that replays them through coelho's Elixir

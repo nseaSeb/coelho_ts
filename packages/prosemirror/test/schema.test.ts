@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { defaultSchema, extendSchema, validate } from "@coelho/core";
+import { defaultSchema, extendSchema, validate } from "@nseaprotector/coelho-core";
 import { DOMParser, DOMSerializer, Node } from "prosemirror-model";
 import { EditorState, TextSelection } from "prosemirror-state";
 import { describe, expect, test } from "vitest";

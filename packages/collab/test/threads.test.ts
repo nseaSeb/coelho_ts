@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { anchorAt, defaultSchema, hash, type Comment, type Node as CoelhoNode } from "@coelho/core";
-import { addComment, coelhoPlugins, commentsPlugin, commentsState, proseMirrorSchemaFor, relocateComments } from "@coelho/prosemirror";
+import { anchorAt, defaultSchema, hash, type Comment, type Node as CoelhoNode } from "@nseaprotector/coelho-core";
+import { addComment, coelhoPlugins, commentsPlugin, commentsState, proseMirrorSchemaFor, relocateComments } from "@nseaprotector/coelho-prosemirror";
 import { EditorState, TextSelection } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { Awareness } from "y-protocols/awareness";

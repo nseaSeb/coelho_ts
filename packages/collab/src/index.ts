@@ -1,5 +1,5 @@
-import { sanitize, validate, type Document, type Node as CoelhoNode, type Schema as CoelhoSchema, type ValidationError } from "@coelho/core";
-import { proseMirrorSchemaFor } from "@coelho/prosemirror";
+import { sanitize, validate, type Document, type Node as CoelhoNode, type Schema as CoelhoSchema, type ValidationError } from "@nseaprotector/coelho-core";
+import { proseMirrorSchemaFor } from "@nseaprotector/coelho-prosemirror";
 import { keymap } from "prosemirror-keymap";
 import type { Node, Schema } from "prosemirror-model";
 import { Plugin } from "prosemirror-state";

@@ -1,4 +1,4 @@
-import type { AnchorSource } from "@coelho/prosemirror";
+import type { AnchorSource } from "@nseaprotector/coelho-prosemirror";
 import { absolutePositionToRelativePosition, relativePositionToAbsolutePosition, ySyncPluginKey } from "y-prosemirror";
 import * as Y from "yjs";
 

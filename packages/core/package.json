@@ -1,5 +1,5 @@
 {
-  "name": "@coelho/core",
+  "name": "@nseaprotector/coelho-core",
   "version": "0.1.0",
   "description": "Structured rich text, the storage layer: schema, validation, canonical form, hash, safe HTML and plain text. No editor, no DOM, no dependency.",
   "license": "MIT",

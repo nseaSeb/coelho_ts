@@ -24,7 +24,7 @@ editor, and so do the features around it — collaboration, comments,
 import and export. This project keeps all of them in code you own, and
 separates the format from the editor:
 
-- `@coelho/core` owns the format. Zero dependencies, runs in the browser,
+- `@nseaprotector/coelho-core` owns the format. Zero dependencies, runs in the browser,
   in Node, in a worker. Your schema, your validation, your rendering.
 - the editor (ProseMirror, MIT) is an adapter behind that boundary. Swap
   it, upgrade it, or replace it: the stored documents do not change.
@@ -33,10 +33,10 @@ separates the format from the editor:
 
 | Package | What | Status |
 | --- | --- | --- |
-| `@coelho/core` | schema, `validate`, `sanitize`, `canonical`, `hash`, `toHtml`, `toInlineHtml`, `toText`, `toMarkdown`, `isBlank`, trusted/untrusted rendering policy, anchors | `validate`, `canonical`, `hash`, `toHtml` and `toText` byte for byte with coelho's corpus; `sanitize` ported with coelho's own test suite |
-| `@coelho/prosemirror` | coelho schema → ProseMirror `Schema`, editing plugins, anchored comments, suggestion triggers, `fromHtml`, `fromMarkdown`, Markdown paste | working |
-| `@coelho/react` | `<CoelhoEditor>`, `useCoelhoEditor`, default toolbar, React node views, `useSuggestion` and `<SuggestionMenu>` | working |
-| `@coelho/collab` | collaborative editing over Yjs: `seed`, `snapshot`, `collab()`, comment threads on relative positions, shared threads, `LocalRelay` | working |
+| `@nseaprotector/coelho-core` | schema, `validate`, `sanitize`, `canonical`, `hash`, `toHtml`, `toInlineHtml`, `toText`, `toMarkdown`, `isBlank`, trusted/untrusted rendering policy, anchors | `validate`, `canonical`, `hash`, `toHtml` and `toText` byte for byte with coelho's corpus; `sanitize` ported with coelho's own test suite |
+| `@nseaprotector/coelho-prosemirror` | coelho schema → ProseMirror `Schema`, editing plugins, anchored comments, suggestion triggers, `fromHtml`, `fromMarkdown`, Markdown paste | working |
+| `@nseaprotector/coelho-react` | `<CoelhoEditor>`, `useCoelhoEditor`, default toolbar, React node views, `useSuggestion` and `<SuggestionMenu>` | working |
+| `@nseaprotector/coelho-collab` | collaborative editing over Yjs: `seed`, `snapshot`, `collab()`, comment threads on relative positions, shared threads, `LocalRelay` | working |
 
 `apps/demo` (`pnpm --filter coelho-demo dev`, http://localhost:5180) shows
 the editor with anchored comments, and under it everything derived from
@@ -45,7 +45,7 @@ the stored tree.
 ## Five minutes
 
 ```ts
-import { defaultSchema, validate, hash, toHtml, toText } from "@coelho/core";
+import { defaultSchema, validate, hash, toHtml, toText } from "@nseaprotector/coelho-core";
 
 const schema = defaultSchema();
 const result = validate(editor.state.doc.toJSON(), schema);
@@ -83,7 +83,7 @@ once. The editor can load a row through it too: `useCoelhoEditor({ repair: true 
 ### Your own schema
 
 ```ts
-import { defaultSchema, extendSchema } from "@coelho/core";
+import { defaultSchema, extendSchema } from "@nseaprotector/coelho-core";
 
 const schema = extendSchema(defaultSchema(), {
   nodes: {
@@ -141,7 +141,7 @@ y-websocket or Hocuspocus, both MIT, do the same; you run the server.
 
 ## Markdown
 
-`toMarkdown` (in `@coelho/core`, no dependency) writes CommonMark with
+`toMarkdown` (in `@nseaprotector/coelho-core`, no dependency) writes CommonMark with
 GitHub's tables and strikethrough. Every character a writer typed comes
 back as that character: what Markdown would read as syntax is escaped, a
 mark is written with `**`, `*` or `~~` only where CommonMark is certain to
@@ -149,7 +149,7 @@ read them as delimiters and as `<strong>`, `<em>`, `<del>` otherwise, and
 what Markdown cannot say (a cell holding a list, a heading holding a line
 break) is written as HTML. Your own nodes and marks take overrides.
 
-`fromMarkdown` and `fromHtml` (in `@coelho/prosemirror`, they need a DOM)
+`fromMarkdown` and `fromHtml` (in `@nseaprotector/coelho-prosemirror`, they need a DOM)
 go the other way through the schema's own parse rules, on an inert
 document: nothing in the HTML runs or loads. `markdownPaste(schema)` makes
 pasted plain text arrive formatted. Text that says nothing in Markdown is
@@ -234,7 +234,7 @@ interface Thread { id: string; anchor: { from: number; to: number; quote: string
   their ranges through every change. Typing at the end of a commented
   range does not extend it. Deleting the text loses the anchor; undo
   finds it again.
-- `@coelho/core` computes positions and quotes on the stored JSON exactly
+- `@nseaprotector/coelho-core` computes positions and quotes on the stored JSON exactly
   as ProseMirror does (checked on every range of a test document), so a
   server can place a thread without an editor.
 - An anchor keeps the text just before and after its quote, the shape of
@@ -280,7 +280,7 @@ Done: the storage layer with parity, `sanitize`, Markdown both ways, collaborati
 the controlled React editor (StrictMode-safe: every jsdom test mounts
 under StrictMode), React node views, suggestions, anchored comments.
 
-1. `@coelho/core`: `toJSON` of the schema in the shape coelho's browser
+1. `@nseaprotector/coelho-core`: `toJSON` of the schema in the shape coelho's browser
    hook expects.
 2. Node views with editable content (only leaf nodes today).
 3. Comments: render threads on the page (`toHtml` with highlights),

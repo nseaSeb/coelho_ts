@@ -1,4 +1,4 @@
-import { CONTEXT, reanchor, type Anchor, type Node as CoelhoNode, type Schema as CoelhoSchema } from "@coelho/core";
+import { CONTEXT, reanchor, type Anchor, type Node as CoelhoNode, type Schema as CoelhoSchema } from "@nseaprotector/coelho-core";
 import type { Node } from "prosemirror-model";
 import { isHistoryTransaction } from "prosemirror-history";
 import { Plugin, PluginKey, TextSelection, type Command, type EditorState, type Transaction } from "prosemirror-state";
@@ -21,7 +21,7 @@ export interface StoredAnchor {
  * Where threads are when ranges cannot be mapped. A collaborative binding
  * replaces the whole document on every remote change, which collapses
  * every mapped range; a source that knows where each thread points in the
- * shared document (`@coelho/collab`'s Yjs relative positions) puts them
+ * shared document (`@nseaprotector/coelho-collab`'s Yjs relative positions) puts them
  * back. What it cannot place is looked for by its quote.
  */
 export interface AnchorSource {

@@ -1,5 +1,5 @@
-import type { Node as CoelhoNode, Schema as CoelhoSchema, ValidationError } from "@coelho/core";
-import { coelhoPlugins, proseMirrorSchemaFor, toProseMirrorDoc } from "@coelho/prosemirror";
+import type { Node as CoelhoNode, Schema as CoelhoSchema, ValidationError } from "@nseaprotector/coelho-core";
+import { coelhoPlugins, proseMirrorSchemaFor, toProseMirrorDoc } from "@nseaprotector/coelho-prosemirror";
 import type { Node, Schema } from "prosemirror-model";
 import { EditorState, type Plugin, type Transaction } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";

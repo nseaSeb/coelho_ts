@@ -9,13 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@coelho/core": "workspace:*",
-    "@coelho/prosemirror": "workspace:*",
-    "@coelho/react": "workspace:*",
+    "@nseaprotector/coelho-core": "workspace:*",
+    "@nseaprotector/coelho-prosemirror": "workspace:*",
+    "@nseaprotector/coelho-react": "workspace:*",
     "prosemirror-view": "1.42.2",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "@coelho/collab": "workspace:*",
+    "@nseaprotector/coelho-collab": "workspace:*",
     "yjs": "13.6.33",
     "y-protocols": "1.0.7"
   },

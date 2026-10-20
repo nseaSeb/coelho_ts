@@ -1,5 +1,5 @@
-import type { Node as CoelhoNode, Schema as CoelhoSchema, ValidationError } from "@coelho/core";
-import { setBlockType, toggleMark, wrapIn, wrapInList } from "@coelho/prosemirror";
+import type { Node as CoelhoNode, Schema as CoelhoSchema, ValidationError } from "@nseaprotector/coelho-core";
+import { setBlockType, toggleMark, wrapIn, wrapInList } from "@nseaprotector/coelho-prosemirror";
 import type { MarkType, NodeType } from "prosemirror-model";
 import type { Command, EditorState } from "prosemirror-state";
 import type { ReactNode } from "react";

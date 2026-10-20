@@ -1,4 +1,4 @@
-import { anchorAt, contentSize, defaultSchema, reanchor, textBetween, type Node as CoelhoNode } from "@coelho/core";
+import { anchorAt, contentSize, defaultSchema, reanchor, textBetween, type Node as CoelhoNode } from "@nseaprotector/coelho-core";
 import { Node } from "prosemirror-model";
 import { history, undo } from "prosemirror-history";
 import { EditorState, TextSelection, type Transaction } from "prosemirror-state";

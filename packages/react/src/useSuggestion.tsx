@@ -1,4 +1,4 @@
-import { dismissSuggestion, suggestionState, type SuggestionKeys, type SuggestionMatch } from "@coelho/prosemirror";
+import { dismissSuggestion, suggestionState, type SuggestionKeys, type SuggestionMatch } from "@nseaprotector/coelho-prosemirror";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { CoelhoEditor } from "./useCoelhoEditor.js";
 

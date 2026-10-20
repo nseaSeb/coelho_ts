@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { defaultSchema, hash, toHtml, type Node as CoelhoNode } from "@coelho/core";
-import { coelhoPlugins, proseMirrorSchemaFor } from "@coelho/prosemirror";
+import { defaultSchema, hash, toHtml, type Node as CoelhoNode } from "@nseaprotector/coelho-core";
+import { coelhoPlugins, proseMirrorSchemaFor } from "@nseaprotector/coelho-prosemirror";
 import { EditorState, TextSelection } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { undoCommand } from "y-prosemirror";

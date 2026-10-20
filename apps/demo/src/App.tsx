@@ -1,4 +1,4 @@
-import { canonical, defaultSchema, escape, extendSchema, hash, isBlank, reanchor, sanitize, tag, textLength, toHtml, toMarkdown, toText, validate, type Node, type Thread } from "@coelho/core";
+import { canonical, defaultSchema, escape, extendSchema, hash, isBlank, reanchor, sanitize, tag, textLength, toHtml, toMarkdown, toText, validate, type Node, type Thread } from "@nseaprotector/coelho-core";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Collab } from "./Collab.js";
 import { CommentedEditor, type LiveThread } from "./Comments.js";
@@ -39,7 +39,7 @@ const initial: Node = {
         { type: "text", text: "What you type here is stored as " },
         { type: "text", text: "JSON", marks: [{ type: "bold" }] },
         { type: "text", text: ", validated against a schema, and rendered by " },
-        { type: "text", text: "@coelho/core", marks: [{ type: "code" }] },
+        { type: "text", text: "@nseaprotector/coelho-core", marks: [{ type: "code" }] },
         { type: "text", text: ". Try " },
         { type: "text", text: "# ", marks: [{ type: "code" }] },
         { type: "text", text: ", " },

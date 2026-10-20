@@ -1,5 +1,5 @@
 {
-  "name": "@coelho/collab",
+  "name": "@nseaprotector/coelho-collab",
   "version": "0.1.0",
   "description": "Collaborative editing for coelho over Yjs: the CRDT carries and merges, the stored document stays coelho's validated JSON.",
   "license": "MIT",
@@ -10,8 +10,8 @@
   "scripts": { "build": "tsc -b" },
   "peerDependencies": { "yjs": "^13.6.0" },
   "dependencies": {
-    "@coelho/core": "workspace:*",
-    "@coelho/prosemirror": "workspace:*",
+    "@nseaprotector/coelho-core": "workspace:*",
+    "@nseaprotector/coelho-prosemirror": "workspace:*",
     "prosemirror-keymap": "1.2.3",
     "prosemirror-model": "1.25.11",
     "prosemirror-state": "1.4.4",

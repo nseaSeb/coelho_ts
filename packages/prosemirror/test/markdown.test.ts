@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { buildDefaultSchema, defaultSchema, extendSchema, toHtml, toMarkdown, toText, validate, type Node, type Schema } from "@coelho/core";
+import { buildDefaultSchema, defaultSchema, extendSchema, toHtml, toMarkdown, toText, validate, type Node, type Schema } from "@nseaprotector/coelho-core";
 import { describe, expect, test } from "vitest";
 import { fromHtml, fromMarkdown } from "../src/index.js";
 import { generator } from "./markdownDocuments.js";

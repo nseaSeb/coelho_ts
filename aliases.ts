@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 const source = (name: string): string => fileURLToPath(new URL(`./packages/${name}/src/index.ts`, import.meta.url));
 
 export const workspaceAliases = {
-  "@coelho/core": source("core"),
-  "@coelho/prosemirror": source("prosemirror"),
-  "@coelho/react": source("react"),
-  "@coelho/collab": source("collab"),
+  "@nseaprotector/coelho-core": source("core"),
+  "@nseaprotector/coelho-prosemirror": source("prosemirror"),
+  "@nseaprotector/coelho-react": source("react"),
+  "@nseaprotector/coelho-collab": source("collab"),
 };

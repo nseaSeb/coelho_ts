@@ -1,5 +1,5 @@
-import { sanitize, type Anchor, type Comment, type Schema, type Thread } from "@coelho/core";
-import type { AnchorSource } from "@coelho/prosemirror";
+import { sanitize, type Anchor, type Comment, type Schema, type Thread } from "@nseaprotector/coelho-core";
+import type { AnchorSource } from "@nseaprotector/coelho-prosemirror";
 import * as Y from "yjs";
 import { relativeAnchors, type RelativeRange } from "./anchors.js";
 

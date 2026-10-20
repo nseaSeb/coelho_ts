@@ -1,4 +1,4 @@
-import { defaultSchema, extendSchema, tag, escape } from "@coelho/core";
+import { defaultSchema, extendSchema, tag, escape } from "@nseaprotector/coelho-core";
 import { Node } from "prosemirror-model";
 import { EditorState, TextSelection, type Command } from "prosemirror-state";
 import { describe, expect, test } from "vitest";

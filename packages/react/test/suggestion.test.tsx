@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { defaultSchema, escape, extendSchema, tag, toHtml, validate, type Node } from "@coelho/core";
-import { createSuggestion, replaceSuggestion, type SuggestionKeys } from "@coelho/prosemirror";
+import { defaultSchema, escape, extendSchema, tag, toHtml, validate, type Node } from "@nseaprotector/coelho-core";
+import { createSuggestion, replaceSuggestion, type SuggestionKeys } from "@nseaprotector/coelho-prosemirror";
 import { act, StrictMode, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";

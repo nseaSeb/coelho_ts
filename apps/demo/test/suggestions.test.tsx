@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { defaultSchema, validate, type Node } from "@coelho/core";
-import { createSuggestion } from "@coelho/prosemirror";
-import { useCoelhoEditor, type CoelhoEditorHandle } from "@coelho/react";
+import { defaultSchema, validate, type Node } from "@nseaprotector/coelho-core";
+import { createSuggestion } from "@nseaprotector/coelho-prosemirror";
+import { useCoelhoEditor, type CoelhoEditorHandle } from "@nseaprotector/coelho-react";
 import { act, StrictMode, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, expect, test } from "vitest";

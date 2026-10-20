@@ -1,8 +1,8 @@
-import { anchorAt, hash, toHtml, type Schema } from "@coelho/core";
-import { collab, FIELD, LocalRelay, seed, sharedThreads, snapshot, THREADS } from "@coelho/collab";
-import { addComment, commentsPlugin, commentsState, relocateComments, selectComment, setActiveComment } from "@coelho/prosemirror";
-import { Toolbar, useCoelhoEditor } from "@coelho/react";
-import type { Node } from "@coelho/core";
+import { anchorAt, hash, toHtml, type Schema } from "@nseaprotector/coelho-core";
+import { collab, FIELD, LocalRelay, seed, sharedThreads, snapshot, THREADS } from "@nseaprotector/coelho-collab";
+import { addComment, commentsPlugin, commentsState, relocateComments, selectComment, setActiveComment } from "@nseaprotector/coelho-prosemirror";
+import { Toolbar, useCoelhoEditor } from "@nseaprotector/coelho-react";
+import type { Node } from "@nseaprotector/coelho-core";
 import type { Command } from "prosemirror-state";
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { commentSchema, ThreadCard } from "./Comments.js";

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { defaultSchema, validate, type Node, type ValidationError } from "@coelho/core";
+import { defaultSchema, validate, type Node, type ValidationError } from "@nseaprotector/coelho-core";
 import { undoDepth } from "prosemirror-history";
 import { act, StrictMode, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
