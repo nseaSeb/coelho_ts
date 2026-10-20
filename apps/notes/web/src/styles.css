@@ -113,3 +113,21 @@ button.primary:disabled { opacity: 0.5; }
 .vault .pending { display: grid; gap: 6px; }
 .vault .pending button { font: inherit; font-size: 13px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
 .vault .pending button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* History */
+.side-tabs { margin: 0 0 12px; }
+.history .versions { list-style: none; padding: 0; margin: 0 0 12px; max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+.history .versions button { display: grid; grid-template-columns: 1fr auto; gap: 0 8px; width: 100%; text-align: left; font: inherit; font-size: 13px; padding: 6px 8px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer; }
+.history .versions li:last-child button { border-bottom: 0; }
+.history .versions button[aria-pressed="true"] { background: var(--code); }
+.history .versions button:hover { background: var(--code); }
+.history .when, .history .by { color: var(--muted); font-size: 12px; }
+.history .by { grid-column: 1 / -1; }
+.compare-head { display: flex; gap: 12px; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.compare .primary { margin-top: 10px; width: 100%; }
+.diff { font-size: 14px; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; max-height: 50vh; overflow: auto; }
+.diff-same { opacity: 0.55; }
+.diff-added { background: rgba(45, 122, 62, 0.12); border-left: 3px solid var(--ok); padding-left: 6px; }
+.diff-removed { background: rgba(181, 68, 44, 0.1); border-left: 3px solid var(--accent); padding-left: 6px; text-decoration: line-through; }
+.diff ins { background: rgba(45, 122, 62, 0.22); text-decoration: none; border-radius: 2px; }
+.diff del { background: rgba(181, 68, 44, 0.2); border-radius: 2px; }

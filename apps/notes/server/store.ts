@@ -19,6 +19,23 @@ export interface StoredPage {
   updatedAt: string;
 }
 
+/** A page as it was at one moment of its history. */
+export interface PageVersion {
+  id: string;
+  name: string;
+  body: Document;
+  hash: string | null;
+  /** Who wrote it; `null` for the page as the server seeded it. */
+  createdBy: string | null;
+  /** Why this version exists, when it is not someone writing: "imported", "restored from #12". */
+  note: string | null;
+  createdAt: string;
+  /** The last change folded into it: a writer's session is one version, not one per save. */
+  updatedAt: string;
+}
+
+export type VersionSummary = Omit<PageVersion, "body">;
+
 export interface DocumentStore {
   /** The Yjs state of a page, or `null` for a page never stored. */
   load(name: string): Promise<Uint8Array | null>;
@@ -35,13 +52,38 @@ export interface DocumentStore {
    * never as HTML: the text is the writers', and is rendered as text.
    */
   search(query: string): Promise<Array<{ name: string; snippet: string }>>;
+  /** A page's history, newest first, without the bodies. */
+  versions(name: string): Promise<VersionSummary[]>;
+  version(name: string, id: string): Promise<PageVersion | null>;
+  addVersion(version: Omit<PageVersion, "id" | "createdAt" | "updatedAt">): Promise<PageVersion>;
+  /** Folds a new state into an existing version. */
+  updateVersion(id: string, change: Pick<PageVersion, "body" | "hash">): Promise<void>;
   close(): Promise<void>;
 }
 
 /** For tests and for running without a database: nothing survives a restart. */
 export function memoryStore(): DocumentStore {
   const rows = new Map<string, { page: StoredPage; state: Uint8Array }>();
+  const history: PageVersion[] = [];
+  let nextVersion = 1;
+  const summary = (version: PageVersion): VersionSummary => {
+    const { body, ...rest } = version;
+    void body;
+    return rest;
+  };
   return {
+    versions: async (name) => history.filter((version) => version.name === name).reverse().slice(0, 100).map(summary),
+    version: async (name, id) => history.find((version) => version.name === name && version.id === id) ?? null,
+    addVersion: async (version) => {
+      const now = new Date().toISOString();
+      const stored = { ...version, id: String(nextVersion++), createdAt: now, updatedAt: now };
+      history.push(stored);
+      return stored;
+    },
+    updateVersion: async (id, change) => {
+      const version = history.find((one) => one.id === id);
+      if (version !== undefined) Object.assign(version, change, { updatedAt: new Date().toISOString() });
+    },
     load: async (name) => rows.get(name)?.state ?? null,
     save: async (page, state) => void rows.set(page.name, { page: { ...page, updatedAt: new Date().toISOString() }, state }),
     get: async (name) => rows.get(name)?.page ?? null,
@@ -84,7 +126,18 @@ create index if not exists pages_links on pages using gin (links);
 alter table pages drop column if exists search;
 alter table pages add column if not exists search_words tsvector
   generated always as (to_tsvector('simple', regexp_replace(name || ' ' || text, '[/_.-]', ' ', 'g'))) stored;
-create index if not exists pages_search_words on pages using gin (search_words);`;
+create index if not exists pages_search_words on pages using gin (search_words);
+create table if not exists page_versions (
+  id         bigserial primary key,
+  name       text not null,
+  body       jsonb not null,
+  hash       text,
+  created_by text,
+  note       text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists page_versions_name on page_versions (name, id desc);`;
 
 /**
  * Pages in Postgres. The Yjs state is what the room resumes from; the body
@@ -146,6 +199,25 @@ export async function postgresStore(pool: pg.Pool): Promise<DocumentStore> {
       );
       return result.rows.map((r) => ({ name: r.name as string, snippet: r.snippet as string }));
     },
+    versions: async (name) => {
+      const result = await pool.query("select id, name, hash, created_by, note, created_at, updated_at from page_versions where name = $1 order by id desc limit 100", [name]);
+      return result.rows.map((r) => versionOf(r) as VersionSummary);
+    },
+    version: async (name, id) => {
+      if (!/^\d+$/.test(id)) return null;
+      const result = await pool.query("select * from page_versions where name = $1 and id = $2", [name, id]);
+      return result.rows[0] === undefined ? null : (versionOf(result.rows[0]) as PageVersion);
+    },
+    addVersion: async (version) => {
+      const result = await pool.query(
+        "insert into page_versions (name, body, hash, created_by, note) values ($1, $2, $3, $4, $5) returning *",
+        [version.name, JSON.stringify(version.body), version.hash, version.createdBy, version.note],
+      );
+      return versionOf(result.rows[0]) as PageVersion;
+    },
+    updateVersion: async (id, change) => {
+      await pool.query("update page_versions set body = $2, hash = $3, updated_at = now() where id = $1", [id, JSON.stringify(change.body), change.hash]);
+    },
     close: async () => {},
   };
 }
@@ -168,4 +240,17 @@ export function snippetOf(text: string, words: string[]): string {
   const at = pattern.exec(flat)?.index ?? 0;
   pattern.lastIndex = 0;
   return flat.slice(Math.max(0, at - 40), at + 80).replace(pattern, (match) => `\u0001${match}\u0002`);
+}
+
+function versionOf(r: Record<string, unknown>): PageVersion | VersionSummary {
+  const version: VersionSummary = {
+    id: String(r.id),
+    name: r.name as string,
+    hash: (r.hash as string | null) ?? null,
+    createdBy: (r.created_by as string | null) ?? null,
+    note: (r.note as string | null) ?? null,
+    createdAt: (r.created_at as Date).toISOString(),
+    updatedAt: (r.updated_at as Date).toISOString(),
+  };
+  return r.body === undefined ? version : { ...version, body: r.body as Document };
 }

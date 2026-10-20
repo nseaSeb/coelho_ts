@@ -2,6 +2,13 @@
 
 The four packages are versioned together.
 
+## Unreleased
+
+- **@nseaprotector/coelho-core**: `diffDocuments(before, after, schema)`
+  compares two versions of a document block by block, by canonical bytes,
+  and word by word inside a block of the same kind that was edited;
+  `diffWords` compares two texts. Additions only.
+
 ## 0.2.0 — 2026-10-20
 
 Additions only; nothing that worked in 0.1.0 changes.

@@ -79,3 +79,30 @@ test("[[ links a page, the link opens it, and the new page knows who links to it
   await expect(page.locator(".backlinks")).toContainText("welcome");
   await expect(page.getByRole("navigation", { name: "Pages" })).toContainText(name.split("/")[1] as string);
 });
+
+test("a page's history: what a version changed, and bringing it back for everyone", async ({ browser }, testInfo) => {
+  const page = await account(browser, "Ada", "ada@example.test");
+  const name = `history-${testInfo.repeatEachIndex}${testInfo.retry}`;
+  await page.goto(`/#${name}`);
+  await expect(editor(page).locator("h1")).toHaveText(name);
+  await typeAtEnd(page, " A temporary line.");
+
+  await page.getByRole("tab", { name: "History" }).click();
+  const versions = page.getByRole("list", { name: "Versions" }).getByRole("button");
+  await expect(versions).toHaveCount(2);
+  await expect(versions.first()).toContainText("Ada");
+
+  // What Ada's version changed: her words, added to the seeded line.
+  await versions.first().click();
+  await expect(page.locator(".diff ins")).toHaveText(" A temporary line.");
+
+  // The seeded version, compared with the page now, then brought back.
+  await versions.last().click();
+  await page.getByLabel("since then").check();
+  await expect(page.locator(".diff ins")).toHaveText(" A temporary line.");
+  await page.getByRole("button", { name: /^Restore version/ }).click();
+  await expect(editor(page)).not.toContainText("A temporary line.");
+  await expect(versions).toHaveCount(3);
+  await expect(versions.first()).toContainText("restored from #");
+});
+

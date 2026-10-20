@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { isPageName, schema } from "../../server/schema.js";
 import { api, currentUser, type Me } from "./api.js";
 import { People, SignIn } from "./Auth.js";
+import { History } from "./History.js";
 import { Sidebar, type PageSummary } from "./Pages.js";
 
 // The schema comes from the server's own module: what this editor writes is what the server validates.
@@ -122,7 +123,7 @@ function Page({ name, me, pages, onReauthenticated }: { name: string; me: Me; pa
         {provider !== null && synced ? <Editor provider={provider} readOnly={me.role === "reader"} pages={pages} /> : <div className="placeholder">Opening “{name}”…</div>}
         <p className="hint">Open this page in another tab or browser: every writer edits the same page, live. Add <code>#another-name</code> to the URL for a new page.</p>
       </section>
-      <Stored name={name} />
+      <Side name={name} me={me} />
     </div>
   );
 }
@@ -193,6 +194,24 @@ interface StoredPage {
 }
 
 /** What Postgres holds for this page: read back from the server, never from this tab. */
+/** Beside the page: what is stored and who links here, or the page's history. */
+function Side({ name, me }: { name: string; me: Me }): ReactNode {
+  const [tab, setTab] = useState<"page" | "history">("page");
+  return (
+    <aside className="stored">
+      <div className="tabs side-tabs" role="tablist">
+        <button type="button" role="tab" aria-selected={tab === "page"} onClick={() => setTab("page")}>
+          Page
+        </button>
+        <button type="button" role="tab" aria-selected={tab === "history"} onClick={() => setTab("history")}>
+          History
+        </button>
+      </div>
+      {tab === "page" ? <Stored name={name} /> : <History key={name} name={name} me={me} />}
+    </aside>
+  );
+}
+
 function Stored({ name }: { name: string }): ReactNode {
   const [page, setPage] = useState<StoredPage | null>(null);
   const [backlinks, setBacklinks] = useState<PageSummary[]>([]);
@@ -216,7 +235,7 @@ function Stored({ name }: { name: string }): ReactNode {
   }, [name]);
 
   return (
-    <aside className="stored">
+    <>
       <h2>Linked from</h2>
       {backlinks.length === 0 ? (
         <p className="muted small">No page links here yet.</p>
@@ -250,6 +269,6 @@ function Stored({ name }: { name: string }): ReactNode {
           <div className="prose" dangerouslySetInnerHTML={{ __html: toHtml(page.body, schema) }} />
         </>
       )}
-    </aside>
+    </>
   );
 }

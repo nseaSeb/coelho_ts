@@ -43,7 +43,7 @@ Not only React: `coelho-core` runs anywhere, and `createEditor` from
 
 | Package | What | Status |
 | --- | --- | --- |
-| `@nseaprotector/coelho-core` | schema, `validate`, `sanitize`, `canonical`, `hash`, `toHtml`, `toInlineHtml`, `toText`, `toMarkdown`, `isBlank`, trusted/untrusted rendering policy, anchors | `validate`, `canonical`, `hash`, `toHtml` and `toText` byte for byte with coelho's corpus; `sanitize` ported with coelho's own test suite |
+| `@nseaprotector/coelho-core` | schema, `validate`, `sanitize`, `canonical`, `hash`, `toHtml`, `toInlineHtml`, `toText`, `toMarkdown`, `diffDocuments`, `isBlank`, trusted/untrusted rendering policy, anchors | `validate`, `canonical`, `hash`, `toHtml` and `toText` byte for byte with coelho's corpus; `sanitize` ported with coelho's own test suite |
 | `@nseaprotector/coelho-prosemirror` | coelho schema → ProseMirror `Schema`, editing plugins, anchored comments, suggestion triggers, `fromHtml`, `fromMarkdown`, Markdown paste | working |
 | `@nseaprotector/coelho-react` | `<CoelhoEditor>`, `useCoelhoEditor`, default toolbar, React node views, `useSuggestion` and `<SuggestionMenu>` | working |
 | `@nseaprotector/coelho-collab` | collaborative editing over Yjs: `seed`, `snapshot`, `collab()`, comment threads on relative positions, shared threads, `LocalRelay` | working |
@@ -165,6 +165,14 @@ opens another page.
   on. A page exported and imported again stores the same hash, accented
   names included. File names in the archive are UTF-8, which the Finder
   and every current unzip read; the `unzip` macOS ships does not.
+- **Every page has a history.** Each stored change is a version, with its
+  hash and its author; one writer's session is one version, not one per
+  save, and an import or a restore is a version of its own. The History
+  tab shows what a version changed, or how it differs from the page now,
+  block by block and word by word (`diffDocuments`, in
+  `@nseaprotector/coelho-core`), and an editor can restore it: it is
+  written into the room for everyone with the page open, and becomes the
+  newest version, the one it replaced kept.
 - **Search** as you type, every word a prefix, over a generated `tsvector`
   with a GIN index; matches come back marked with control characters, not
   HTML, since the text is the writers'.

@@ -24,6 +24,8 @@ export interface NotesServerOptions {
   staticDir?: string;
   /** How long after the last change a page is stored, in ms. */
   debounce?: number;
+  /** How long a writer's session lasts as one version, in ms. Default: 5 minutes. */
+  versionWindow?: number;
 }
 
 /**
@@ -37,9 +39,25 @@ export function createNotesServer(options: NotesServerOptions): Server {
   const { store } = options;
 
   const { accounts } = options;
-  const persist = async (name: string, document: Y.Doc, state: Uint8Array, by: User | null): Promise<void> => {
+  // A writer's session is one version: saves by the same person within
+  // this long of the version's start are folded into it.
+  const session = options.versionWindow ?? 5 * 60 * 1000;
+
+  /**
+   * Stores a page, and its history: a new version when the document
+   * changed and someone else wrote it, or the session is over, or `note`
+   * says why it must stand on its own (an import, a restore).
+   */
+  const persist = async (name: string, document: Y.Doc, state: Uint8Array, by: User | null, note: string | null = null): Promise<void> => {
     const { document: body, errors } = snapshot(document, schema);
-    await store.save({ name, body, hash: await hash(body), text: toText(body, schema), errors, updatedBy: by?.name ?? null, links: linksOf(body) }, state);
+    const digest = await hash(body);
+    await store.save({ name, body, hash: digest, text: toText(body, schema), errors, updatedBy: by?.name ?? null, links: linksOf(body) }, state);
+    const [latest] = await store.versions(name);
+    if (latest !== undefined && latest.hash === digest && note === null) return;
+    const author = by?.name ?? null;
+    const sameSession = latest !== undefined && note === null && latest.note === null && latest.createdBy === author && author !== null && Date.now() - Date.parse(latest.createdAt) < session;
+    if (sameSession) await store.updateVersion(latest.id, { body, hash: digest });
+    else await store.addVersion({ name, body, hash: digest, createdBy: author, note });
   };
 
   // Every connection is someone signed in. A reader's connection is read
@@ -133,7 +151,7 @@ export function createNotesServer(options: NotesServerOptions): Server {
   const editorOnly: express.RequestHandler = async (request, response, next) => {
     const user = await userFrom(accounts, request.headers.cookie);
     if (user === null) return void response.status(401).json({ error: "sign in first" });
-    if (user.role === "reader") return void response.status(403).json({ error: "readers cannot import" });
+    if (user.role === "reader") return void response.status(403).json({ error: "readers cannot change pages" });
     response.locals.user = user;
     next();
   };
@@ -157,6 +175,9 @@ export function createNotesServer(options: NotesServerOptions): Server {
         const connection = await server.hocuspocus.openDirectConnection(name, { user, importing: true });
         try {
           await connection.transact((shared) => replace(shared, schema, entry.document));
+          // Stored now, as a version of its own, rather than folded into whatever the debounce finds.
+          const shared = connection.document as Y.Doc;
+          await persist(name, shared, Y.encodeStateAsUpdate(shared), user, "imported");
         } finally {
           await connection.disconnect();
         }
@@ -167,6 +188,33 @@ export function createNotesServer(options: NotesServerOptions): Server {
       }
     }
     response.json({ imported, repaired, refused, failed });
+  });
+
+  app.get("/api/pages/:name/versions", async (request, response) => {
+    response.json(await store.versions(request.params.name));
+  });
+  app.get("/api/pages/:name/versions/:id", async (request, response) => {
+    const version = await store.version(request.params.name, request.params.id);
+    if (version === null) response.status(404).json({ error: "no such version" });
+    else response.json(version);
+  });
+  // A restore writes the version's body into the room, as any writer would:
+  // everyone with the page open sees it come back, and it becomes the
+  // newest version, the one it replaced kept in the history.
+  app.post("/api/pages/:name/versions/:id/restore", editorOnly, async (request, response) => {
+    const name = String(request.params.name);
+    const version = await store.version(name, String(request.params.id));
+    if (version === null) return void response.status(404).json({ error: "no such version" });
+    const user = response.locals.user as User;
+    const connection = await server.hocuspocus.openDirectConnection(name, { user });
+    try {
+      await connection.transact((shared) => replace(shared, schema, version.body));
+      const shared = connection.document as Y.Doc;
+      await persist(name, shared, Y.encodeStateAsUpdate(shared), user, `restored from #${version.id}`);
+    } finally {
+      await connection.disconnect();
+    }
+    response.json((await store.versions(name))[0]);
   });
 
   app.get("/api/pages/:name/backlinks", async (request, response) => {

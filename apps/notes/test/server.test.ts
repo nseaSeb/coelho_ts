@@ -28,8 +28,8 @@ interface Running {
   http: string;
 }
 
-async function start(store: DocumentStore = memoryStore(), accounts = memoryAccounts()): Promise<Running & { accounts: typeof accounts }> {
-  const server = createNotesServer({ store, accounts, port: 0, debounce: 20 });
+async function start(store: DocumentStore = memoryStore(), accounts = memoryAccounts(), versionWindow?: number): Promise<Running & { accounts: typeof accounts }> {
+  const server = createNotesServer({ store, accounts, port: 0, debounce: 20, ...(versionWindow === undefined ? {} : { versionWindow }) });
   await server.listen();
   running.push(server);
   const { port } = server.address;
@@ -355,6 +355,66 @@ describe("the vault", () => {
     const [hit] = await search("markdown");
     expect(hit?.snippet).toContain("\u0001Markdown\u0002");
     expect(hit?.snippet).toContain("<script>");
+  });
+});
+
+describe("a page's history", () => {
+  type Summary = { id: string; createdBy: string | null; note: string | null; hash: string | null };
+  const history = async (http: string, name: string, cookie: string): Promise<Summary[]> => (await call(http, `/api/pages/${name}/versions`, { cookie })).json() as never;
+
+  test("starts with the seeded page, and folds one writer's session into one version", async () => {
+    const { url, http, store } = await start();
+    const cookie = await signUp(http, "Camille");
+    const page = await open(url, "log", cookie);
+    for (const word of ["one ", "two ", "three "]) {
+      firstText(page).insert(0, word);
+      await until(async () => (await store.get("log"))?.text.includes(word) ?? false);
+    }
+    const versions = await history(http, "log", cookie);
+    expect(versions.map((v) => v.createdBy)).toEqual(["Camille", null]);
+    expect(versions[0]?.hash).toBe((await store.get("log"))?.hash);
+  });
+
+  test("starts a new version when someone else writes, or the session is over", async () => {
+    const { url, http, store } = await start(memoryStore(), memoryAccounts(), 0);
+    const admin = await signUp(http, "Camille");
+    const page = await open(url, "log", admin);
+    firstText(page).insert(0, "a ");
+    await until(async () => (await store.get("log"))?.text.includes("a ") ?? false);
+    firstText(page).insert(0, "b ");
+    await until(async () => (await store.get("log"))?.text.includes("b ") ?? false);
+    expect((await history(http, "log", admin)).map((v) => v.createdBy)).toEqual(["Camille", "Camille", null]);
+  });
+
+  test("restores a version for everyone with the page open, and keeps what it replaced", async () => {
+    const { url, http, store } = await start();
+    const admin = await signUp(http, "Camille");
+    const reader = await signUp(http, "Sacha");
+    const page = await open(url, "log", admin);
+    const watching = await open(url, "log", reader);
+    const seeded = (await history(http, "log", admin)).at(-1)!;
+    firstText(page).insert(0, "Gone soon. ");
+    await until(async () => (await store.get("log"))?.text.includes("Gone soon.") ?? false);
+
+    expect((await call(http, `/api/pages/log/versions/${seeded.id}/restore`, { body: {}, cookie: reader })).status).toBe(403);
+    const restored = (await (await call(http, `/api/pages/log/versions/${seeded.id}/restore`, { body: {}, cookie: admin })).json()) as Summary;
+    expect(restored.note).toBe(`restored from #${seeded.id}`);
+    expect(restored.hash).toBe(seeded.hash);
+
+    await until(() => !textOf(watching).includes("Gone soon."));
+    expect((await store.get("log"))?.hash).toBe(seeded.hash);
+    const versions = await history(http, "log", admin);
+    expect(versions.map((v) => v.note ?? v.createdBy)).toEqual([`restored from #${seeded.id}`, "Camille", null]);
+    const replaced = (await (await call(http, `/api/pages/log/versions/${versions[1]!.id}`, { cookie: admin })).json()) as { body: unknown };
+    expect(JSON.stringify(replaced.body)).toContain("Gone soon.");
+  });
+
+  test("an import is a version of its own", async () => {
+    const { http } = await start();
+    const cookie = await signUp(http, "Camille");
+    const document = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "From a vault." }] }] };
+    await call(http, "/api/import", { body: { pages: [{ name: "fresh", document }] }, cookie });
+    expect((await history(http, "fresh", cookie)).map((v) => [v.createdBy, v.note])).toEqual([["Camille", "imported"]]);
   });
 });
 
