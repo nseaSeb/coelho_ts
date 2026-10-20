@@ -103,12 +103,15 @@ export function memoryStore(): DocumentStore {
     loadThreads: async (name) => discussions.get(name)?.state ?? null,
     saveThreads: async (name, state, threads) => void discussions.set(name, { state, threads }),
     threads: async (name) => discussions.get(name)?.threads ?? [],
-    versions: async (name, page = {}) =>
-      history
-        .filter((version) => version.name === name && (page.before === undefined || Number(version.id) < Number(page.before)))
+    versions: async (name, page = {}) => {
+      // An id that is not one is ignored, as Postgres's store does.
+      const before = page.before !== undefined && /^\d+$/.test(page.before) ? Number(page.before) : null;
+      return history
+        .filter((version) => version.name === name && (before === null || Number(version.id) < before))
         .reverse()
-        .slice(0, page.limit ?? 50)
-        .map(summary),
+        .slice(0, Math.min(page.limit ?? 50, 200))
+        .map(summary);
+    },
     version: async (name, id) => {
       const mine = history.filter((version) => version.name === name);
       const at = mine.findIndex((version) => version.id === id);
@@ -130,7 +133,9 @@ export function memoryStore(): DocumentStore {
     },
     load: async (name) => rows.get(name)?.state ?? null,
     exists: async (name) => rows.has(name),
-    save: async (page, state) => void rows.set(page.name, { page: { ...page, updatedAt: new Date().toISOString() }, state }),
+    // A store without an author (the server seeding) keeps the last one, as Postgres does.
+    save: async (page, state) =>
+      void rows.set(page.name, { page: { ...page, updatedBy: page.updatedBy ?? rows.get(page.name)?.page.updatedBy ?? null, updatedAt: new Date().toISOString() }, state }),
     get: async (name) => rows.get(name)?.page ?? null,
     list: async () =>
       [...rows.values()].map(({ page }) => ({ name: page.name, hash: page.hash, updatedBy: page.updatedBy, updatedAt: page.updatedAt })).sort((a, b) => a.name.localeCompare(b.name)),

@@ -146,6 +146,8 @@ export async function postgresAccounts(pool: pg.Pool): Promise<AccountStore> {
     },
     list: async () => (await pool.query("select id, email, name, role from users order by id")).rows.map(user),
     setRole: async (id, role) => {
+      // An id is a bigint: anything else is no account, not a query error.
+      if (!/^\d{1,18}$/.test(id)) return null;
       const result = await pool.query("update users set role = $2 where id = $1 returning id, email, name, role", [id, role]);
       return result.rows[0] === undefined ? null : user(result.rows[0]);
     },

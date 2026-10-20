@@ -193,6 +193,10 @@ Without Docker: `DATABASE_URL=postgres://… pnpm --filter coelho-notes dev:serv
 and `pnpm --filter coelho-notes dev:web` (http://localhost:5181); without
 `DATABASE_URL` the server keeps pages in memory.
 
+The stores are tested in memory, and against Postgres as well when
+`TEST_DATABASE_URL` is set (CI sets it), each test in a schema of its own:
+`TEST_DATABASE_URL=postgres://… pnpm test`.
+
 ## Collaboration
 
 Yjs carries every writer's changes and merges them. It is not the
