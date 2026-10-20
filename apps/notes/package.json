@@ -1,0 +1,38 @@
+{
+  "name": "coelho-notes",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Collaborative documentation on coelho: a Hocuspocus server storing validated documents in Postgres.",
+  "type": "module",
+  "scripts": {
+    "dev:server": "tsx watch server/main.ts",
+    "dev:web": "vite --config web/vite.config.ts",
+    "build": "vite build --config web/vite.config.ts && tsc -p server/tsconfig.json",
+    "start": "node dist/server/main.js"
+  },
+  "dependencies": {
+    "@hocuspocus/extension-database": "4.7.0",
+    "@hocuspocus/provider": "4.7.0",
+    "@hocuspocus/server": "4.7.0",
+    "@nseaprotector/coelho-collab": "workspace:*",
+    "@nseaprotector/coelho-core": "workspace:*",
+    "@nseaprotector/coelho-prosemirror": "workspace:*",
+    "@nseaprotector/coelho-react": "workspace:*",
+    "express": "5.2.1",
+    "pg": "8.23.1",
+    "prosemirror-view": "1.42.2",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "y-protocols": "1.0.7",
+    "yjs": "13.6.33"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6",
+    "@types/pg": "8.23.1",
+    "@types/react": "19.1.6",
+    "@types/react-dom": "19.1.6",
+    "@vitejs/plugin-react": "4.5.0",
+    "tsx": "4.20.3",
+    "vite": "6.3.5"
+  }
+}

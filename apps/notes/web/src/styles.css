@@ -1,0 +1,45 @@
+:root {
+  --bg: #f6f5f2; --panel: #fff; --ink: #1d1c1a; --muted: #6b675f; --line: #e0ddd6; --accent: #b5442c; --ok: #2d7a3e; --code: #f0eee9;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #171614; --panel: #201f1c; --ink: #ece9e2; --muted: #a39e94; --line: #353330; --accent: #e4765c; --ok: #6fc283; --code: #2a2824; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1200px; margin: 0 auto; padding: 24px 16px 64px; }
+header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+h1 { font-size: 22px; margin: 0; }
+h1 span { color: var(--muted); font-weight: 400; font-size: 15px; margin-left: 10px; }
+.me { font-size: 13px; border-left: 3px solid; padding-left: 8px; }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+.status { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 4px; }
+.dot.connected { background: var(--ok); }
+.dot.disconnected { background: var(--accent); }
+.placeholder { padding: 40px; text-align: center; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+.hint { font-size: 12px; color: var(--muted); }
+code { background: var(--code); padding: 0 4px; border-radius: 3px; font-size: 0.92em; }
+.coelho-editor { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+.coelho-toolbar { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px; border-bottom: 1px solid var(--line); }
+.coelho-toolbar button { min-width: 32px; height: 28px; padding: 0 8px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--ink); font: inherit; font-size: 13px; cursor: pointer; }
+.coelho-toolbar button:hover:not(:disabled) { border-color: var(--line); }
+.coelho-toolbar button[aria-pressed="true"] { background: var(--code); border-color: var(--line); }
+.coelho-toolbar button:disabled { opacity: 0.35; cursor: default; }
+.coelho-toolbar-gap { width: 8px; }
+.coelho-editor-content .ProseMirror { min-height: 320px; padding: 16px 20px; outline: none; }
+.stored { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; position: sticky; top: 16px; }
+.stored h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 8px; }
+.stored dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 12px; margin: 0 0 10px; }
+.stored dt { color: var(--muted); }
+.muted { color: var(--muted); font-size: 13px; }
+.errors { color: var(--accent); font-size: 12px; white-space: pre-wrap; background: var(--code); padding: 8px; border-radius: 6px; }
+.prose, .ProseMirror { line-height: 1.55; }
+.prose > :first-child, .ProseMirror > :first-child { margin-top: 0; }
+.prose p, .ProseMirror p { margin: 0 0 0.6em; }
+.prose h1, .ProseMirror h1 { font-size: 24px; margin: 0.3em 0 0.5em; }
+.prose h2, .ProseMirror h2 { font-size: 20px; }
+.prose blockquote, .ProseMirror blockquote { margin: 0.6em 0; padding-left: 12px; border-left: 3px solid var(--accent); color: var(--muted); }
+.ProseMirror-yjs-cursor { position: relative; margin-left: -1px; margin-right: -1px; border-left: 1px solid; border-right: 1px solid; word-break: normal; pointer-events: none; }
+.ProseMirror-yjs-cursor > div { position: absolute; top: -1.15em; left: -1px; font-size: 11px; line-height: normal; font-weight: 600; color: #fff; padding: 0 4px; border-radius: 3px 3px 3px 0; white-space: nowrap; user-select: none; }

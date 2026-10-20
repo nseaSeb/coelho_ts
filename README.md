@@ -107,6 +107,38 @@ const schema = extendSchema(defaultSchema(), {
 });
 ```
 
+## coelho notes: collaborative pages, with a server
+
+`apps/notes` is the same editor behind a real server: a
+[Hocuspocus](https://tiptap.dev/docs/hocuspocus) server (MIT) every writer
+connects to, and Postgres. One command:
+
+```
+docker compose up --build
+```
+
+then http://localhost:8080, in two browsers. `#a-page-name` in the URL
+opens another page.
+
+- **The server decides what is stored.** After changes settle, it reads
+  the shared document with `snapshot`, validates it, repairs what a client
+  wrote past the editor, and stores the result. A `javascript:` link
+  written into the shared document by a client is in no stored row, and
+  what was repaired is recorded beside it.
+- **One row per page**: the Yjs state the room resumes from (`bytea`), the
+  validated document (`jsonb`), its hash, and its plain text, derived at
+  write time for search.
+- **A page is seeded on the server, once**, the first time it is opened,
+  and stored at once, so two writers opening an empty page at the same
+  moment do not see its content twice.
+- HTTP and WebSockets share one port: `GET /api/pages` and
+  `GET /api/pages/:name` return what is stored; the side panel of the app
+  shows it, read back from the server.
+
+Without Docker: `DATABASE_URL=postgres://… pnpm --filter coelho-notes dev:server`
+and `pnpm --filter coelho-notes dev:web` (http://localhost:5181); without
+`DATABASE_URL` the server keeps pages in memory.
+
 ## Collaboration
 
 Yjs carries every writer's changes and merges them. It is not the
@@ -354,8 +386,8 @@ under StrictMode), React node views, suggestions, anchored comments.
 2. Node views with editable content (only leaf nodes today).
 3. Comments: render threads on the page (`toHtml` with highlights),
    mentions in comment bodies.
-4. Collaboration: a Hocuspocus server example with the snapshot in
-   `onStoreDocument`.
+4. coelho notes: a page tree, `[[links]]` and backlinks, then a
+   Markdown vault export and import, and search.
 
 ## License
 

@@ -1,0 +1,32 @@
+# coelho notes: collaborative pages, stored validated in Postgres.
+#   docker compose up --build    then open http://localhost:8080
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: coelho
+      POSTGRES_PASSWORD: coelho
+      POSTGRES_DB: notes
+    volumes:
+      - pages:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U coelho -d notes"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  notes:
+    build:
+      context: .
+      dockerfile: apps/notes/Dockerfile
+    environment:
+      DATABASE_URL: postgres://coelho:coelho@db:5432/notes
+      PORT: "8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pages:
