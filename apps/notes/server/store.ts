@@ -36,13 +36,30 @@ export interface PageVersion {
 
 export type VersionSummary = Omit<PageVersion, "body">;
 
+/** A page linked to and not written yet. */
+export interface Missing {
+  name: string;
+  /** The first five pages that link to it. */
+  linkedFrom: string[];
+  linkCount: number;
+}
+
+/** Code point order, the same as Postgres's `collate "C"`, wherever it is sorted. */
+export const byCodePoint = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
 export interface DocumentStore {
   /** The Yjs state of a page, or `null` for a page never stored. */
   load(name: string): Promise<Uint8Array | null>;
+  /** Whether a page was ever stored, without reading it. */
+  exists(name: string): Promise<boolean>;
   save(page: Omit<StoredPage, "updatedAt">, state: Uint8Array): Promise<void>;
   get(name: string): Promise<StoredPage | null>;
-  /** Every page, with the pages it links to: a link to none is a page not written yet. */
-  list(): Promise<Array<Pick<StoredPage, "name" | "hash" | "updatedBy" | "updatedAt" | "links">>>;
+  list(): Promise<Array<Pick<StoredPage, "name" | "hash" | "updatedBy" | "updatedAt">>>;
+  /**
+   * The pages linked to and not written yet, by name, each with how many
+   * pages link to it and the first five of them, by name in code point order.
+   */
+  missing(): Promise<Missing[]>;
   /** The pages that link to this one. */
   backlinks(name: string): Promise<Array<Pick<StoredPage, "name" | "updatedAt">>>;
   /** Every page with its body, for an export. */
@@ -112,10 +129,25 @@ export function memoryStore(): DocumentStore {
       if (version !== undefined) Object.assign(version, change, { updatedAt: new Date().toISOString() });
     },
     load: async (name) => rows.get(name)?.state ?? null,
+    exists: async (name) => rows.has(name),
     save: async (page, state) => void rows.set(page.name, { page: { ...page, updatedAt: new Date().toISOString() }, state }),
     get: async (name) => rows.get(name)?.page ?? null,
     list: async () =>
-      [...rows.values()].map(({ page }) => ({ name: page.name, hash: page.hash, updatedBy: page.updatedBy, updatedAt: page.updatedAt, links: page.links })).sort((a, b) => a.name.localeCompare(b.name)),
+      [...rows.values()].map(({ page }) => ({ name: page.name, hash: page.hash, updatedBy: page.updatedBy, updatedAt: page.updatedAt })).sort((a, b) => a.name.localeCompare(b.name)),
+    missing: async () => {
+      const linking = new Map<string, string[]>();
+      for (const { page } of rows.values()) {
+        for (const link of page.links) {
+          if (rows.has(link)) continue;
+          const from = linking.get(link) ?? [];
+          if (from.length === 0) linking.set(link, from);
+          from.push(page.name);
+        }
+      }
+      return [...linking]
+        .sort(([a], [b]) => byCodePoint(a, b))
+        .map(([name, from]) => ({ name, linkedFrom: from.sort(byCodePoint).slice(0, 5), linkCount: from.length }));
+    },
     backlinks: async (name) =>
       [...rows.values()].filter(({ page }) => page.links.includes(name)).map(({ page }) => ({ name: page.name, updatedAt: page.updatedAt })).sort((a, b) => a.name.localeCompare(b.name)),
     all: async () => [...rows.values()].map(({ page }) => page),
@@ -194,6 +226,7 @@ export async function postgresStore(pool: pg.Pool): Promise<DocumentStore> {
       const result = await pool.query("select state from pages where name = $1", [name]);
       return result.rows[0] === undefined ? null : new Uint8Array(result.rows[0].state as Buffer);
     },
+    exists: async (name) => (await pool.query("select 1 from pages where name = $1", [name])).rowCount === 1,
     save: async (page, state) => {
       await pool.query(
         `insert into pages (name, state, body, hash, text, errors, updated_by, links, updated_at)
@@ -208,14 +241,17 @@ export async function postgresStore(pool: pg.Pool): Promise<DocumentStore> {
       return result.rows[0] === undefined ? null : row(result.rows[0]);
     },
     list: async () => {
-      const result = await pool.query("select name, hash, updated_by, links, updated_at from pages order by name");
-      return result.rows.map((r) => ({
-        name: r.name as string,
-        hash: (r.hash as string | null) ?? null,
-        updatedBy: (r.updated_by as string | null) ?? null,
-        links: (r.links as string[] | null) ?? [],
-        updatedAt: (r.updated_at as Date).toISOString(),
-      }));
+      const result = await pool.query("select name, hash, updated_by, updated_at from pages order by name");
+      return result.rows.map((r) => ({ name: r.name as string, hash: (r.hash as string | null) ?? null, updatedBy: (r.updated_by as string | null) ?? null, updatedAt: (r.updated_at as Date).toISOString() }));
+    },
+    missing: async () => {
+      const result = await pool.query(
+        `select link as name, (array_agg(p.name order by p.name collate "C"))[1:5] as linked_from, count(*)::int as link_count
+         from pages p cross join lateral unnest(p.links) as link
+         where not exists (select 1 from pages q where q.name = link)
+         group by link order by link collate "C"`,
+      );
+      return result.rows.map((r) => ({ name: r.name as string, linkedFrom: r.linked_from as string[], linkCount: r.link_count as number }));
     },
     backlinks: async (name) => {
       const result = await pool.query("select name, updated_at from pages where $1 = any(links) order by name", [name]);

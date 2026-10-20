@@ -210,6 +210,8 @@ describe("who is connected", () => {
     const { url, http, store } = await start();
     const admin = await signUp(http, "Camille");
     const sacha = await signUp(http, "Sacha");
+    // Written first: a reader cannot open a page nobody wrote.
+    await open(url, "page", admin);
     const reader = await open(url, "page", sacha);
     await call(http, "/api/users/2", { method: "PATCH", body: { role: "editor" }, cookie: admin });
     // The connection is closed and comes back under the new role.
@@ -602,7 +604,7 @@ describe("comment threads", () => {
     await store.save({ name: "../../evil", body: { type: "doc", content: [{ type: "paragraph", content: [{ type: "page_link", attrs: { name: "home" } }] }] }, hash: null, text: "evil words", errors: [], updatedBy: null, links: ["home"] }, new Uint8Array());
     const { http } = await start(store);
     const ada = await signUp(http, "Ada");
-    expect(await (await call(http, "/api/pages", { cookie: ada })).json()).toEqual([]);
+    expect(await (await call(http, "/api/pages", { cookie: ada })).json()).toEqual({ pages: [], missing: [{ name: "home", linkedFrom: ["../../evil"], linkCount: 1 }] });
     expect(await (await call(http, "/api/search?q=evil", { cookie: ada })).json()).toEqual([]);
     expect(await (await call(http, "/api/pages/home/backlinks", { cookie: ada })).json()).toEqual([]);
   });
@@ -617,11 +619,25 @@ describe("comment threads", () => {
     expect((await call(http, "/api/import", { body: { pages: [] } })).status).toBe(401);
   });
 
-  test("the list of pages says what each links to", async () => {
+  test("the list of pages says which are linked to and not written yet, from where, five names at most", async () => {
     const store = memoryStore();
-    await store.save({ name: "home", body: { type: "doc", content: [{ type: "paragraph", content: [{ type: "page_link", attrs: { name: "later" } }] }] }, hash: null, text: "", errors: [], updatedBy: null, links: ["later"] }, new Uint8Array());
+    const save = (name: string, links: string[]): Promise<void> => store.save({ name, body: { type: "doc", content: [{ type: "paragraph" }] }, hash: null, text: "", errors: [], updatedBy: null, links }, new Uint8Array());
+    for (const name of ["g", "f", "e", "d", "c", "b"]) await save(name, ["later", "a"]);
+    await save("a", ["b"]);
     const { http } = await start(store);
-    expect(await (await call(http, "/api/pages", { cookie: await signUp(http, "Ada") })).json()).toMatchObject([{ name: "home", links: ["later"] }]);
+    const { pages, missing } = (await (await call(http, "/api/pages", { cookie: await signUp(http, "Ada") })).json()) as { pages: Array<{ name: string }>; missing: unknown[] };
+    expect(pages.map((one) => one.name)).toEqual(["a", "b", "c", "d", "e", "f", "g"]);
+    expect(pages[0]).not.toHaveProperty("links");
+    expect(missing).toEqual([{ name: "later", linkedFrom: ["b", "c", "d", "e", "f"], linkCount: 6 }]);
+  });
+
+  test("a reader cannot write a page by opening it, and is told it is not written yet", async () => {
+    const { url, http, store } = await start();
+    await signUp(http, "Ada");
+    const reader = await signUp(http, "Sam");
+    await expect(open(url, "nobody-wrote-this", reader)).rejects.toThrow("refused: not written yet");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(await store.get("nobody-wrote-this")).toBeNull();
   });
 
   test("an export leaves out a stored name that is not a page's", async () => {

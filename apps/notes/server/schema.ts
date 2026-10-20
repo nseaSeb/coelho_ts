@@ -90,6 +90,9 @@ export const commentSchema = defineSchema({
  */
 export const THREADS_ROOM = "::threads";
 
+/** Why a reader cannot open a page: it does not exist, and opening it would write it. */
+export const NOT_WRITTEN = "not written yet";
+
 export function threadsRoomOf(name: string): string {
   return `${name}${THREADS_ROOM}`;
 }

@@ -6,7 +6,7 @@ import express from "express";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import * as Y from "yjs";
-import { commentSchema, firstPage, isPageName, linksOf, roomOf, schema, threadsRoomOf } from "./schema.js";
+import { commentSchema, firstPage, isPageName, linksOf, NOT_WRITTEN, roomOf, schema, threadsRoomOf } from "./schema.js";
 import { zip } from "./zip.js";
 import type { AccountStore, Role, User } from "./accounts.js";
 import { authRoutes, colorOf, userFrom } from "./auth.js";
@@ -123,6 +123,10 @@ export function createNotesServer(options: NotesServerOptions): Server {
       // a page's threads, which every client reads and the server alone writes.
       const room = roomOf(documentName);
       if (room === null) throw new Error("not a page name");
+      // Opening a page that does not exist writes it: a reader cannot.
+      if (user.role === "reader" && room.kind === "page" && !(await store.exists(room.page))) {
+        throw Object.assign(new Error(NOT_WRITTEN), { reason: NOT_WRITTEN });
+      }
       if (user.role === "reader" || room.kind === "threads") connectionConfig.readOnly = true;
       return { user };
     },
@@ -209,8 +213,11 @@ export function createNotesServer(options: NotesServerOptions): Server {
   // A name that is not a page's may be stored from before names were
   // checked everywhere: no route serves it, so it is listed nowhere.
   const named = <T extends { name: string }>(rows: T[]): T[] => rows.filter((row) => isPageName(row.name));
+  // The pages, and the pages linked to and not written yet, worked out here
+  // rather than from every page's links in every browser.
   app.get("/api/pages", async (_request, response) => {
-    response.json(named(await store.list()));
+    const [pages, missing] = await Promise.all([store.list(), store.missing()]);
+    response.json({ pages: named(pages), missing });
   });
   // The vault: one Markdown file per page, in folders, links as Obsidian writes them.
   app.get("/api/export", async (_request, response) => {

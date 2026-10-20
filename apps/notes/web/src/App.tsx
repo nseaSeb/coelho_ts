@@ -5,12 +5,12 @@ import { SuggestionMenu, Toolbar, useCoelhoEditor, useSuggestion, type NodeViewP
 import { HocuspocusProvider, HocuspocusProviderWebsocket } from "@hocuspocus/provider";
 import { Plugin } from "prosemirror-state";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { isPageName, schema } from "../../server/schema.js";
+import { isPageName, NOT_WRITTEN, schema } from "../../server/schema.js";
 import { api, collabUrl, currentUser, type Me } from "./api.js";
 import { People, SignIn } from "./Auth.js";
 import { History } from "./History.js";
 import { Comments, Discussion } from "./Threads.js";
-import { Sidebar, type PageSummary } from "./Pages.js";
+import { Sidebar, type Listing, type PageSummary } from "./Pages.js";
 
 // The schema comes from the server's own module: what this editor writes is what the server validates.
 
@@ -31,10 +31,12 @@ export function App(): ReactNode {
 function Workspace({ me, refresh }: { me: Me; refresh: () => void }): ReactNode {
   const [name, setName] = useState(pageName);
   const [showPeople, setShowPeople] = useState(false);
-  const [pages, setPages] = useState<PageSummary[]>([]);
+  const [listing, setListing] = useState<Listing>({ pages: [], missing: [] });
+  // What `[[` offers: a page linked to and not written yet is a page to link to, not one to create.
+  const linkable = useMemo(() => [...listing.pages, ...listing.missing].map((page) => page.name), [listing]);
   useEffect(() => {
     let live = true;
-    const read = (): void => void api<PageSummary[]>("/api/pages").then((all) => live && setPages(all), () => {});
+    const read = (): void => void api<Listing>("/api/pages").then((all) => live && setListing(all), () => {});
     read();
     const timer = setInterval(read, 3000);
     return () => {
@@ -71,9 +73,9 @@ function Workspace({ me, refresh }: { me: Me; refresh: () => void }): ReactNode 
       {showPeople ? <People me={me} onClose={() => setShowPeople(false)} /> : null}
       {/* A new page or a new role is a new room: everything below is rebuilt. */}
       <div className="frame">
-        <Sidebar pages={pages} current={name} me={me} />
+        <Sidebar listing={listing} current={name} me={me} />
         {isPageName(name) ? (
-          <Page key={`${name}:${me.role}`} name={name} me={me} pages={pages} onReauthenticated={refresh} />
+          <Page key={`${name}:${me.role}`} name={name} me={me} linkable={linkable} onReauthenticated={refresh} />
         ) : (
           <div className="placeholder">“{name}” is not a page name: letters, digits, - _ . and / for folders.</div>
         )}
@@ -84,10 +86,12 @@ function Workspace({ me, refresh }: { me: Me; refresh: () => void }): ReactNode 
 
 type Status = "connecting" | "connected" | "disconnected";
 
-function Page({ name, me, pages, onReauthenticated }: { name: string; me: Me; pages: PageSummary[]; onReauthenticated: () => void }): ReactNode {
+function Page({ name, me, linkable, onReauthenticated }: { name: string; me: Me; linkable: string[]; onReauthenticated: () => void }): ReactNode {
   const [provider, setProvider] = useState<HocuspocusProvider | null>(null);
   const [status, setStatus] = useState<Status>("connecting");
   const [synced, setSynced] = useState(false);
+  // A reader opening a page nobody wrote: opening it would write it.
+  const [unwritten, setUnwritten] = useState(false);
   const [discussion, setDiscussion] = useState<Discussion | null>(null);
   const [tab, setTab] = useState<SideTab>("page");
 
@@ -103,7 +107,7 @@ function Page({ name, me, pages, onReauthenticated }: { name: string; me: Me; pa
       onSynced: () => setSynced(true),
       // After a reconnection the role may have changed: ask who we are now.
       onAuthenticated: onReauthenticated,
-      onAuthenticationFailed: onReauthenticated,
+      onAuthenticationFailed: ({ reason }) => (reason === NOT_WRITTEN ? setUnwritten(true) : onReauthenticated()),
     });
     // The server stamps presence with the account anyway; this is what this tab shows meanwhile.
     next.setAwarenessField("user", { id: me.id, name: me.name, color: me.color });
@@ -130,8 +134,10 @@ function Page({ name, me, pages, onReauthenticated }: { name: string; me: Me; pa
           {status === "connected" && !synced ? " · loading the page…" : ""}
         </div>
         {me.role === "reader" ? <p className="readonly">You can read this page. An admin can let you edit it.</p> : null}
-        {provider !== null && synced && discussion !== null ? (
-          <Editor provider={provider} readOnly={me.role === "reader"} pages={pages} discussion={discussion} onComment={() => setTab("comments")} />
+        {unwritten ? (
+          <div className="placeholder">“{name}” is not written yet. An editor or an admin can write it.</div>
+        ) : provider !== null && synced && discussion !== null ? (
+          <Editor provider={provider} readOnly={me.role === "reader"} linkable={linkable} discussion={discussion} onComment={() => setTab("comments")} />
         ) : (
           <div className="placeholder">Opening “{name}”…</div>
         )}
@@ -161,12 +167,12 @@ type Choice = { name: string; create: boolean };
 interface EditorProps {
   provider: HocuspocusProvider;
   readOnly: boolean;
-  pages: PageSummary[];
+  linkable: string[];
   discussion: Discussion;
   onComment: () => void;
 }
 
-function Editor({ provider, readOnly: reading, pages, discussion, onComment }: EditorProps): ReactNode {
+function Editor({ provider, readOnly: reading, linkable, discussion, onComment }: EditorProps): ReactNode {
   const setup = useMemo(() => collab({ doc: provider.document, awareness: provider.awareness as NonNullable<typeof provider.awareness> }), [provider]);
   // `[[` opens the list of pages; the plugins are made once for this editor.
   const [links] = useState(() => createSuggestion(["[["]));
@@ -183,14 +189,14 @@ function Editor({ provider, readOnly: reading, pages, discussion, onComment }: E
   });
   const active = editor.state === null ? null : (commentsState(editor.state)?.active ?? null);
   useEffect(() => discussion.setActive(active), [discussion, active]);
-  const known = useRef(pages);
-  known.current = pages;
+  const known = useRef(linkable);
+  known.current = linkable;
   const suggestion = useSuggestion<Choice>(editor, {
     keys: links.keys,
     items: (match) => {
       const query = match.query.toLowerCase();
-      const found: Choice[] = known.current.filter((page) => page.name.toLowerCase().includes(query)).slice(0, 8).map((page) => ({ name: page.name, create: false }));
-      const exact = known.current.some((page) => page.name === match.query);
+      const found: Choice[] = known.current.filter((page) => page.toLowerCase().includes(query)).slice(0, 8).map((page) => ({ name: page, create: false }));
+      const exact = known.current.includes(match.query);
       return isPageName(match.query) && !exact ? [...found, { name: match.query, create: true }] : found;
     },
     onSelect: (choice) => {

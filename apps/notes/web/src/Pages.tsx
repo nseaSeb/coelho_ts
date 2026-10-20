@@ -1,5 +1,6 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { isPageName } from "../../server/schema.js";
+import type { Missing } from "../../server/store.js";
 import type { Me } from "./api.js";
 import { Search, Vault } from "./Vault.js";
 
@@ -7,26 +8,12 @@ export interface PageSummary {
   name: string;
   updatedBy: string | null;
   updatedAt: string;
-  /** The pages it links to; given by the list of pages, not by backlinks. */
-  links?: string[];
 }
 
-/** A page linked to and not written yet: opening it makes it. */
-export interface Missing {
-  name: string;
-  linkedFrom: string[];
-}
-
-/** The pages linked to that do not exist, each with the pages that link to it, by name. */
-export function missingOf(pages: PageSummary[]): Missing[] {
-  const names = new Set(pages.map((page) => page.name));
-  const missing = new Map<string, string[]>();
-  for (const page of pages) {
-    for (const link of page.links ?? []) {
-      if (!names.has(link)) missing.set(link, [...(missing.get(link) ?? []), page.name]);
-    }
-  }
-  return [...missing].map(([name, linkedFrom]) => ({ name, linkedFrom })).sort((a, b) => a.name.localeCompare(b.name));
+/** What `/api/pages` answers: the pages, and those linked to and not written yet. */
+export interface Listing {
+  pages: PageSummary[];
+  missing: Missing[];
 }
 
 type Entry = { kind: "page"; page: PageSummary } | { kind: "missing"; missing: Missing };
@@ -37,9 +24,9 @@ interface Folder {
 }
 
 /** `docs/getting-started` lives in the folder `docs`: the tree is read off the names, written or not. */
-function treeOf(pages: PageSummary[]): Folder {
+function treeOf({ pages, missing }: Listing): Folder {
   const root: Folder = { entries: [], folders: new Map() };
-  const entries: Entry[] = [...pages.map((page): Entry => ({ kind: "page", page })), ...missingOf(pages).map((missing): Entry => ({ kind: "missing", missing }))];
+  const entries: Entry[] = [...pages.map((page): Entry => ({ kind: "page", page })), ...missing.map((one): Entry => ({ kind: "missing", missing: one }))];
   entries.sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
   for (const entry of entries) {
     const parts = nameOf(entry).split("/");
@@ -57,6 +44,12 @@ function treeOf(pages: PageSummary[]): Folder {
   return root;
 }
 
+/** "linked from a, b and 3 more": the server sends the first five. */
+export function linkedFrom({ linkedFrom: names, linkCount }: Missing): string {
+  const more = linkCount - names.length;
+  return `not written yet; linked from ${names.join(", ")}${more > 0 ? ` and ${more} more` : ""}`;
+}
+
 const nameOf = (entry: Entry): string => (entry.kind === "page" ? entry.page.name : entry.missing.name);
 
 function Branch({ folder, current }: { folder: Folder; current: string }): ReactNode {
@@ -70,7 +63,7 @@ function Branch({ folder, current }: { folder: Folder; current: string }): React
       ))}
       {folder.entries.map((entry) => {
         const name = nameOf(entry);
-        const title = entry.kind === "missing" ? `not written yet; linked from ${entry.missing.linkedFrom.join(", ")}` : entry.page.updatedBy === null ? undefined : `last changed by ${entry.page.updatedBy}`;
+        const title = entry.kind === "missing" ? linkedFrom(entry.missing) : entry.page.updatedBy === null ? undefined : `last changed by ${entry.page.updatedBy}`;
         return (
           <li key={name}>
             <a href={`#${encodeURIComponent(name)}`} className={entry.kind === "missing" ? "missing" : undefined} aria-current={name === current ? "page" : undefined} title={title}>
@@ -83,8 +76,10 @@ function Branch({ folder, current }: { folder: Folder; current: string }): React
   );
 }
 
-export function Sidebar({ pages, current, me }: { pages: PageSummary[]; current: string; me: Me }): ReactNode {
+export function Sidebar({ listing, current, me }: { listing: Listing; current: string; me: Me }): ReactNode {
   const [draft, setDraft] = useState("");
+  // Not rebuilt as a name is typed below: only when the listing changes.
+  const tree = useMemo(() => treeOf(listing), [listing]);
   const valid = isPageName(draft);
   const create = (event: FormEvent): void => {
     event.preventDefault();
@@ -97,7 +92,7 @@ export function Sidebar({ pages, current, me }: { pages: PageSummary[]; current:
     <nav className="sidebar" aria-label="Pages">
       <Search />
       <h2>Pages</h2>
-      <Branch folder={treeOf(pages)} current={current} />
+      <Branch folder={tree} current={current} />
       <form onSubmit={create}>
         <input value={draft} onChange={(event) => setDraft(event.target.value.trim())} placeholder="new page, or folder/page" aria-label="New page name" aria-invalid={draft !== "" && !valid} />
         <button type="submit" disabled={!valid}>
@@ -105,7 +100,7 @@ export function Sidebar({ pages, current, me }: { pages: PageSummary[]; current:
         </button>
       </form>
       {draft !== "" && !valid ? <p className="small muted">Letters, digits, - _ . and / for folders.</p> : null}
-      <Vault me={me} pages={pages} />
+      <Vault me={me} pages={listing.pages} />
     </nav>
   );
 }
