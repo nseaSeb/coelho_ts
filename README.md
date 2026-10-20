@@ -1,5 +1,7 @@
 # coelho_ts
 
+[![CI](https://github.com/nseaSeb/coelho_ts/actions/workflows/ci.yml/badge.svg)](https://github.com/nseaSeb/coelho_ts/actions/workflows/ci.yml)
+
 Structured rich text for TypeScript and React. The document is the storage,
 never HTML.
 
