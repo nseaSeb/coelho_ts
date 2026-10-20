@@ -12,6 +12,8 @@ export interface StoredPage {
   text: string;
   /** What the shared document held that the schema refused, repaired before it was stored. */
   errors: ValidationError[];
+  /** Who made the last stored change; `null` for a page as the server seeded it. */
+  updatedBy: string | null;
   updatedAt: string;
 }
 
@@ -20,7 +22,7 @@ export interface DocumentStore {
   load(name: string): Promise<Uint8Array | null>;
   save(page: Omit<StoredPage, "updatedAt">, state: Uint8Array): Promise<void>;
   get(name: string): Promise<StoredPage | null>;
-  list(): Promise<Array<Pick<StoredPage, "name" | "hash" | "updatedAt">>>;
+  list(): Promise<Array<Pick<StoredPage, "name" | "hash" | "updatedBy" | "updatedAt">>>;
   close(): Promise<void>;
 }
 
@@ -31,7 +33,7 @@ export function memoryStore(): DocumentStore {
     load: async (name) => rows.get(name)?.state ?? null,
     save: async (page, state) => void rows.set(page.name, { page: { ...page, updatedAt: new Date().toISOString() }, state }),
     get: async (name) => rows.get(name)?.page ?? null,
-    list: async () => [...rows.values()].map(({ page }) => ({ name: page.name, hash: page.hash, updatedAt: page.updatedAt })),
+    list: async () => [...rows.values()].map(({ page }) => ({ name: page.name, hash: page.hash, updatedBy: page.updatedBy, updatedAt: page.updatedAt })),
     close: async () => {},
   };
 }
@@ -45,15 +47,15 @@ create table if not exists pages (
   text       text not null default '',
   errors     jsonb not null default '[]',
   updated_at timestamptz not null default now()
-)`;
+);
+alter table pages add column if not exists updated_by text;`;
 
 /**
  * Pages in Postgres. The Yjs state is what the room resumes from; the body
  * is coelho's validated JSON in a jsonb column, next to its hash and its
  * text, derived at write time so a search never has to extract it.
  */
-export async function postgresStore(connectionString: string): Promise<DocumentStore> {
-  const pool = new pg.Pool({ connectionString });
+export async function postgresStore(pool: pg.Pool): Promise<DocumentStore> {
   await pool.query(MIGRATION);
   const row = (r: Record<string, unknown>): StoredPage => ({
     name: r.name as string,
@@ -61,6 +63,7 @@ export async function postgresStore(connectionString: string): Promise<DocumentS
     hash: (r.hash as string | null) ?? null,
     text: r.text as string,
     errors: r.errors as ValidationError[],
+    updatedBy: (r.updated_by as string | null) ?? null,
     updatedAt: (r.updated_at as Date).toISOString(),
   });
   return {
@@ -70,20 +73,21 @@ export async function postgresStore(connectionString: string): Promise<DocumentS
     },
     save: async (page, state) => {
       await pool.query(
-        `insert into pages (name, state, body, hash, text, errors, updated_at)
-         values ($1, $2, $3, $4, $5, $6, now())
-         on conflict (name) do update set state = $2, body = $3, hash = $4, text = $5, errors = $6, updated_at = now()`,
-        [page.name, Buffer.from(state), JSON.stringify(page.body), page.hash, page.text, JSON.stringify(page.errors)],
+        `insert into pages (name, state, body, hash, text, errors, updated_by, updated_at)
+         values ($1, $2, $3, $4, $5, $6, $7, now())
+         on conflict (name) do update set state = $2, body = $3, hash = $4, text = $5, errors = $6,
+           updated_by = coalesce($7, pages.updated_by), updated_at = now()`,
+        [page.name, Buffer.from(state), JSON.stringify(page.body), page.hash, page.text, JSON.stringify(page.errors), page.updatedBy],
       );
     },
     get: async (name) => {
-      const result = await pool.query("select name, body, hash, text, errors, updated_at from pages where name = $1", [name]);
+      const result = await pool.query("select name, body, hash, text, errors, updated_by, updated_at from pages where name = $1", [name]);
       return result.rows[0] === undefined ? null : row(result.rows[0]);
     },
     list: async () => {
-      const result = await pool.query("select name, hash, updated_at from pages order by name");
-      return result.rows.map((r) => ({ name: r.name as string, hash: (r.hash as string | null) ?? null, updatedAt: (r.updated_at as Date).toISOString() }));
+      const result = await pool.query("select name, hash, updated_by, updated_at from pages order by name");
+      return result.rows.map((r) => ({ name: r.name as string, hash: (r.hash as string | null) ?? null, updatedBy: (r.updated_by as string | null) ?? null, updatedAt: (r.updated_at as Date).toISOString() }));
     },
-    close: () => pool.end(),
+    close: async () => {},
   };
 }

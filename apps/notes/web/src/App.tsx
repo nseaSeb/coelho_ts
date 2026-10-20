@@ -2,26 +2,31 @@ import { collab } from "@nseaprotector/coelho-collab";
 import { defaultSchema, toHtml, type Document, type ValidationError } from "@nseaprotector/coelho-core";
 import { Toolbar, useCoelhoEditor } from "@nseaprotector/coelho-react";
 import { HocuspocusProvider } from "@hocuspocus/provider";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Plugin } from "prosemirror-state";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { api, currentUser, type Me } from "./api.js";
+import { People, SignIn } from "./Auth.js";
 
 // The schema the server stores under; the same object on both sides.
 const schema = defaultSchema();
-
-const people = ["Camille", "Sacha", "Dominique", "Alex", "Noa", "Éloïse"];
-const colors = ["#b5442c", "#2d6a9f", "#2d7a3e", "#8a4fb5", "#b5862c", "#2c9fa0"];
-
-/** A name and a colour for this tab, so the other writers can tell who is where. */
-const me = (() => {
-  const index = Math.floor(Math.random() * people.length);
-  return { name: people[index] as string, color: colors[index] as string };
-})();
 
 function pageName(): string {
   return decodeURIComponent(location.hash.slice(1)) || "welcome";
 }
 
 export function App(): ReactNode {
+  const [me, setMe] = useState<Me | null | undefined>(undefined);
+  const refresh = useCallback(() => void currentUser().then(setMe), []);
+  useEffect(refresh, [refresh]);
+
+  if (me === undefined) return <main className="placeholder">…</main>;
+  if (me === null) return <SignIn onSignedIn={refresh} />;
+  return <Workspace me={me} refresh={refresh} />;
+}
+
+function Workspace({ me, refresh }: { me: Me; refresh: () => void }): ReactNode {
   const [name, setName] = useState(pageName);
+  const [showPeople, setShowPeople] = useState(false);
   useEffect(() => {
     const onHash = (): void => setName(pageName());
     window.addEventListener("hashchange", onHash);
@@ -34,19 +39,30 @@ export function App(): ReactNode {
         <h1>
           coelho notes <span>collaborative pages, stored validated</span>
         </h1>
-        <span className="me" style={{ borderColor: me.color }}>
-          you are {me.name}
-        </span>
+        <div className="account">
+          <span className="me" style={{ borderColor: me.color }}>
+            {me.name} <span className={`role ${me.role}`}>{me.role}</span>
+          </span>
+          {me.role === "admin" ? (
+            <button type="button" onClick={() => setShowPeople((shown) => !shown)}>
+              People
+            </button>
+          ) : null}
+          <button type="button" onClick={() => void api("/api/logout", { body: {} }).then(refresh)}>
+            Sign out
+          </button>
+        </div>
       </header>
-      {/* One page at a time: a new name is a new room. */}
-      <Page key={name} name={name} />
+      {showPeople ? <People me={me} onClose={() => setShowPeople(false)} /> : null}
+      {/* A new page or a new role is a new room: everything below is rebuilt. */}
+      <Page key={`${name}:${me.role}`} name={name} me={me} onReauthenticated={refresh} />
     </main>
   );
 }
 
 type Status = "connecting" | "connected" | "disconnected";
 
-function Page({ name }: { name: string }): ReactNode {
+function Page({ name, me, onReauthenticated }: { name: string; me: Me; onReauthenticated: () => void }): ReactNode {
   const [provider, setProvider] = useState<HocuspocusProvider | null>(null);
   const [status, setStatus] = useState<Status>("connecting");
   const [synced, setSynced] = useState(false);
@@ -60,14 +76,19 @@ function Page({ name }: { name: string }): ReactNode {
       name,
       onStatus: ({ status: now }) => setStatus(now as Status),
       onSynced: () => setSynced(true),
+      // After a reconnection the role may have changed: ask who we are now.
+      onAuthenticated: onReauthenticated,
+      onAuthenticationFailed: onReauthenticated,
     });
-    next.setAwarenessField("user", me);
+    // The server stamps presence with the account anyway; this is what this tab shows meanwhile.
+    next.setAwarenessField("user", { id: me.id, name: me.name, color: me.color });
     setProvider(next);
     return () => {
       next.destroy();
       setProvider(null);
       setSynced(false);
     };
+    // The account is fixed for this page's lifetime: a new role remounts it.
   }, [name]);
 
   return (
@@ -77,7 +98,8 @@ function Page({ name }: { name: string }): ReactNode {
           <span className={`dot ${status}`} /> {status}
           {status === "connected" && !synced ? " · loading the page…" : ""}
         </div>
-        {provider !== null && synced ? <Editor provider={provider} /> : <div className="placeholder">Opening “{name}”…</div>}
+        {me.role === "reader" ? <p className="readonly">You can read this page. An admin can let you edit it.</p> : null}
+        {provider !== null && synced ? <Editor provider={provider} readOnly={me.role === "reader"} /> : <div className="placeholder">Opening “{name}”…</div>}
         <p className="hint">Open this page in another tab or browser: every writer edits the same page, live. Add <code>#another-name</code> to the URL for a new page.</p>
       </section>
       <Stored name={name} />
@@ -85,9 +107,12 @@ function Page({ name }: { name: string }): ReactNode {
   );
 }
 
-function Editor({ provider }: { provider: HocuspocusProvider }): ReactNode {
+// The server already refuses a reader's changes; this keeps the editor from pretending otherwise.
+const readOnly = [new Plugin({ props: { editable: () => false } })];
+
+function Editor({ provider, readOnly: reading }: { provider: HocuspocusProvider; readOnly: boolean }): ReactNode {
   const setup = useMemo(() => collab({ doc: provider.document, awareness: provider.awareness as NonNullable<typeof provider.awareness> }), [provider]);
-  const editor = useCoelhoEditor({ schema, setup, history: false });
+  const editor = useCoelhoEditor({ schema, setup, history: false, plugins: reading ? readOnly : undefined });
   return (
     <div className="coelho-editor">
       <Toolbar editor={editor} />
@@ -102,6 +127,7 @@ interface StoredPage {
   hash: string | null;
   text: string;
   errors: ValidationError[];
+  updatedBy: string | null;
   updatedAt: string;
 }
 
@@ -130,6 +156,8 @@ function Stored({ name }: { name: string }): ReactNode {
       ) : (
         <>
           <dl>
+            <dt>by</dt>
+            <dd>{page.updatedBy ?? "the server, when it seeded the page"}</dd>
             <dt>sha256</dt>
             <dd>
               <code>{page.hash?.slice(0, 24) ?? "null"}…</code>

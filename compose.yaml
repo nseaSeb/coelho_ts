@@ -22,6 +22,12 @@ services:
     environment:
       DATABASE_URL: postgres://coelho:coelho@db:5432/notes
       PORT: "8080"
+      # The first account is the admin. Everyone after starts as:
+      DEFAULT_ROLE: reader
+      # "closed" once everyone has an account (the first one can always sign up).
+      SIGNUP: open
+      # "true" as soon as the app is served over https.
+      COOKIE_SECURE: "false"
     ports:
       - "8080:8080"
     depends_on:

@@ -131,6 +131,16 @@ opens another page.
 - **A page is seeded on the server, once**, the first time it is opened,
   and stored at once, so two writers opening an empty page at the same
   moment do not see its content twice.
+- **Who writes is decided by the server.** Accounts with an email and a
+  password (scrypt), sessions in an `HttpOnly`, `SameSite=Lax` cookie whose
+  token is stored hashed. The first account is the admin; everyone after
+  is a reader until an admin makes them an editor, and a new role applies
+  at once (their socket closes and reconnects under it). A reader's
+  connection is read only on the server, so a modified client cannot
+  write; the name and colour others see in the presence are the
+  account's, whatever a client claims; each stored page records who last
+  changed it. `SIGNUP=closed` closes sign-up, `DEFAULT_ROLE` sets the
+  role of new accounts.
 - HTTP and WebSockets share one port: `GET /api/pages` and
   `GET /api/pages/:name` return what is stored; the side panel of the app
   shows it, read back from the server.
