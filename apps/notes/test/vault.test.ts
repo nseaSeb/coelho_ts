@@ -6,20 +6,20 @@ import { linkResolver, pageNameOf, readVault, stripFrontmatter } from "../web/sr
 
 describe("a vault's files as pages", () => {
   test("keep a name the app accepts as it is, so an exported page comes back to itself", () => {
-    expect(pageNameOf("Cinémas/Lyon.md")).toBe("Cinémas/Lyon");
-    expect(pageNameOf("siege/semaine-42.md")).toBe("siege/semaine-42");
+    expect(pageNameOf("Équipe/Onboarding.md")).toBe("Équipe/Onboarding");
+    expect(pageNameOf("projects/sprint-42.md")).toBe("projects/sprint-42");
     // macOS hands names over decomposed: é is e and an accent.
-    expect(pageNameOf("Cinémas/Lyon.md")).toBe("Cinémas/Lyon");
+    expect(pageNameOf("E\u0301quipe/Onboarding.md")).toBe("Équipe/Onboarding");
   });
 
   test("replace only what a page name cannot hold", () => {
-    expect(pageNameOf("Siège/Réunion du 20 octobre.md")).toBe("Siège/Réunion-du-20-octobre");
+    expect(pageNameOf("Équipe/Réunion du 20 octobre.md")).toBe("Équipe/Réunion-du-20-octobre");
     expect(pageNameOf("  (draft) !.md")).toBe("draft");
     expect(isPageName(pageNameOf("???.md"))).toBe(false);
   });
 
   test("leave out the properties at the top of a note, and only there", () => {
-    expect(stripFrontmatter("---\ntags: cinema\naliases: [Lyon]\n---\n# Lyon\n")).toBe("# Lyon\n");
+    expect(stripFrontmatter("---\ntags: notes\naliases: [Start]\n---\n# Start\n")).toBe("# Start\n");
     expect(stripFrontmatter("---\n---\nbody")).toBe("body");
     expect(stripFrontmatter("text\n\n---\n\nmore")).toBe("text\n\n---\n\nmore");
   });
@@ -27,10 +27,10 @@ describe("a vault's files as pages", () => {
 
 describe("links in a vault", () => {
   test("a link without a folder finds its note by its last part, as Obsidian does", () => {
-    const resolve = linkResolver(["Cinémas/Lyon", "Cinémas/Nantes", "a/Dup", "b/Dup", "Dup"]);
-    expect(resolve("Lyon")).toBe("Cinémas/Lyon");
-    expect(resolve("lyon")).toBe("Cinémas/Lyon");
-    expect(resolve("Siège/Planning")).toBe("Siège/Planning");
+    const resolve = linkResolver(["Équipe/Onboarding", "Équipe/Planning", "a/Dup", "b/Dup", "Dup"]);
+    expect(resolve("Onboarding")).toBe("Équipe/Onboarding");
+    expect(resolve("onboarding")).toBe("Équipe/Onboarding");
+    expect(resolve("Projets/Roadmap")).toBe("Projets/Roadmap");
     // Several candidates: the one with no folder, if there is one; otherwise as written.
     expect(resolve("Dup")).toBe("Dup");
     expect(resolve("Inconnue")).toBe("Inconnue");
@@ -41,29 +41,29 @@ describe("reading a vault", () => {
   test("gives pages, links resolved, properties left out, and says what clashes, is skipped or replaced", () => {
     const pending = readVault(
       [
-        { path: "Cinémas/Lyon.md", text: "---\ntags: salle\n---\nVoir [[Nantes#Horaires|les horaires]] et [[Siège]].\n" },
-        { path: "Cinémas/Nantes.md", text: "# Nantes\n" },
+        { path: "Équipe/Onboarding.md", text: "---\ntags: notes\n---\nVoir [[Planning#Semaine|le planning]] et [[Projets]].\n" },
+        { path: "Équipe/Planning.md", text: "# Planning\n" },
         { path: "a b.md", text: "first" },
         { path: "a-b.md", text: "second" },
         { path: "???.md", text: "nameless" },
       ],
-      ["Siège", "Cinémas/Nantes"],
+      ["Projets", "Équipe/Planning"],
     );
-    expect(pending.pages.map((page) => page.name)).toEqual(["Cinémas/Lyon", "Cinémas/Nantes", "a-b"]);
-    expect(pending.replacing).toEqual(["Cinémas/Nantes"]);
+    expect(pending.pages.map((page) => page.name)).toEqual(["Équipe/Onboarding", "Équipe/Planning", "a-b"]);
+    expect(pending.replacing).toEqual(["Équipe/Planning"]);
     expect(pending.clashes).toEqual(["a-b.md (the same page as a b.md)"]);
     expect(pending.skipped).toEqual(["???.md"]);
-    const lyon = JSON.stringify(pending.pages[0]?.document);
-    expect(lyon).not.toContain("tags");
-    expect(lyon).toContain('{"type":"page_link","attrs":{"name":"Cinémas/Nantes"}}');
-    expect(lyon).toContain('{"type":"page_link","attrs":{"name":"Siège"}}');
+    const onboarding = JSON.stringify(pending.pages[0]?.document);
+    expect(onboarding).not.toContain("tags");
+    expect(onboarding).toContain('{"type":"page_link","attrs":{"name":"Équipe/Planning"}}');
+    expect(onboarding).toContain('{"type":"page_link","attrs":{"name":"Projets"}}');
   });
 });
 
 describe("search snippets", () => {
   test("mark the words that start with what was searched, and are not empty when only the name matched", () => {
-    expect(snippetOf("Projection de Dune ce soir", ["une"])).toBe("Projection de Dune ce soir");
-    expect(snippetOf("Projection de Dune ce soir", ["dun"])).toBe("Projection de \u0001Dune\u0002 ce soir");
-    expect(snippetOf("Le programme de la salle", ["semaine"])).toBe("Le programme de la salle");
+    expect(snippetOf("Reading the Markdown guide tonight", ["own"])).toBe("Reading the Markdown guide tonight");
+    expect(snippetOf("Reading the Markdown guide tonight", ["mark"])).toBe("Reading the \u0001Markdown\u0002 guide tonight");
+    expect(snippetOf("Notes from the meeting", ["sprint"])).toBe("Notes from the meeting");
   });
 });

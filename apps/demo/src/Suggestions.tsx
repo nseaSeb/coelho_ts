@@ -12,12 +12,12 @@ export interface Person {
 
 /** Who can be mentioned. An application would ask its server; the editor never knows. */
 export const people: Person[] = [
-  { id: "u_camille", name: "Camille Durand", role: "Programmation" },
-  { id: "u_sacha", name: "Sacha Martin", role: "Communication" },
-  { id: "u_dominique", name: "Dominique Leroy", role: "Direction de salle" },
-  { id: "u_alex", name: "Alex Bernard", role: "Projection" },
-  { id: "u_noa", name: "Noa Petit", role: "Billetterie" },
-  { id: "u_eloise", name: "Éloïse Moreau", role: "Siège" },
+  { id: "u_camille", name: "Camille Durand", role: "Design" },
+  { id: "u_sacha", name: "Sacha Martin", role: "Product" },
+  { id: "u_dominique", name: "Dominique Leroy", role: "Engineering" },
+  { id: "u_alex", name: "Alex Bernard", role: "Support" },
+  { id: "u_noa", name: "Noa Petit", role: "Marketing" },
+  { id: "u_eloise", name: "Éloïse Moreau", role: "Operations" },
 ];
 
 const fold = (text: string): string => text.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();

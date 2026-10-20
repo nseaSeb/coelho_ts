@@ -147,7 +147,7 @@ opens another page.
   attribute. The server derives each page's links from the validated body
   when it stores it (a `text[]` column with a GIN index), and
   `GET /api/pages/:name/backlinks` answers who links to a page. A `/` in a
-  name is a folder: `siege/semaine-42` sits in `siege`.
+  name is a folder: `projects/sprint-42` sits in `projects`.
 - **The vault goes out and comes back.** `GET /api/export` is a ZIP of
   Markdown files, one per page, in their folders, links written as
   Obsidian writes them (built with what Node ships: deflate, on zlib's

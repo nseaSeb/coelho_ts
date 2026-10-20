@@ -19,7 +19,7 @@ interface Writer {
 const start: Node = {
   type: "doc",
   content: [
-    { type: "heading", attrs: { level: 3 }, content: [{ type: "text", text: "Programme de la semaine" }] },
+    { type: "heading", attrs: { level: 3 }, content: [{ type: "text", text: "Weekly notes" }] },
     {
       type: "paragraph",
       content: [

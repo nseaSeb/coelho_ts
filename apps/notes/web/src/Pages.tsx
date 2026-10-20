@@ -14,7 +14,7 @@ interface Folder {
   folders: Map<string, Folder>;
 }
 
-/** `siege/programme` lives in the folder `siege`: the tree is read off the names. */
+/** `docs/getting-started` lives in the folder `docs`: the tree is read off the names. */
 function treeOf(pages: PageSummary[]): Folder {
   const root: Folder = { pages: [], folders: new Map() };
   for (const page of pages) {

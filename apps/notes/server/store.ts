@@ -79,7 +79,7 @@ create table if not exists pages (
 alter table pages add column if not exists updated_by text;
 alter table pages add column if not exists links text[] not null default '{}';
 create index if not exists pages_links on pages using gin (links);
--- Postgres reads "siege/semaine-42" as one path-like word, so "sema" would
+-- Postgres reads "projects/sprint-42" as one path-like word, so "spri" would
 -- not find it: separators become spaces before the words are indexed.
 alter table pages drop column if exists search;
 alter table pages add column if not exists search_words tsvector

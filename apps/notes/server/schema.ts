@@ -2,7 +2,7 @@ import { defaultSchema, escape, extendSchema, tag, type Node } from "@nseaprotec
 
 /**
  * A page name: letters, digits and `-_.`, with `/` for folders, as
- * `siege/programmation`. It ends up in a URL and in a link's text, so the
+ * `docs/getting-started`. It ends up in a URL and in a link's text, so the
  * schema holds it to this; a link to anything else is not a link.
  */
 export const PAGE_NAME = /^[\p{L}\p{N}][\p{L}\p{N}_.-]*(\/[\p{L}\p{N}][\p{L}\p{N}_.-]*)*$/u;

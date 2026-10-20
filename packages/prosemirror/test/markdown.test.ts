@@ -285,22 +285,22 @@ describe("fromMarkdown", () => {
       nodes: { page_link: { group: "inline", inline: true, void: true, attrs: { name: { required: true, validate: (v) => (typeof v === "string" && /^[a-z/-]+$/.test(v) ? null : "a page name") } } } },
     });
     const wikiLinks = { node: "page_link", attr: "name" };
-    const document = fromMarkdown("See [[cinemas/lyon]] and [[siege|the siege]], not `[[code]]`, not \\[\\[escaped\\]\\], not [[Bad Name]].", linked, { wikiLinks });
+    const document = fromMarkdown("See [[docs/install]] and [[home|the home page]], not `[[code]]`, not \\[\\[escaped\\]\\], not [[Bad Name]].", linked, { wikiLinks });
     const inline = document.content?.[0]?.content ?? [];
-    expect(inline.filter((node) => node.type === "page_link").map((node) => node.attrs?.name)).toEqual(["cinemas/lyon", "siege"]);
+    expect(inline.filter((node) => node.type === "page_link").map((node) => node.attrs?.name)).toEqual(["docs/install", "home"]);
     expect(toText(document, linked)).toContain("[[code]]");
     expect(toText(document, linked)).toContain("[[escaped]]");
     // A link into a page, to a heading or a block, is a link to the page; one to a heading of this page is no link.
-    const anchored = fromMarkdown("[[siege#Horaires]] [[siege^abc123|bloc]] [[#local]]", linked, { wikiLinks });
-    expect(anchored.content?.[0]?.content?.filter((node) => node.type === "page_link").map((node) => node.attrs?.name)).toEqual(["siege", "siege"]);
+    const anchored = fromMarkdown("[[home#Usage]] [[home^abc123|block]] [[#local]]", linked, { wikiLinks });
+    expect(anchored.content?.[0]?.content?.filter((node) => node.type === "page_link").map((node) => node.attrs?.name)).toEqual(["home", "home"]);
     expect(toText(anchored, linked)).toContain("[[#local]]");
     // A link the schema refuses keeps its words.
     expect(toText(document, linked)).toContain("not [[Bad Name]].");
     // A resolver maps targets as written to names, as a vault's files become pages.
-    const resolved = fromMarkdown("[[Cinémas/Lyon Part-Dieu]]", linked, { wikiLinks: { ...wikiLinks, resolve: (t) => t.toLowerCase().replace(/ /g, "-").replace("é", "e") } });
-    expect(resolved.content?.[0]?.content?.[0]).toEqual({ type: "page_link", attrs: { name: "cinemas/lyon-part-dieu" } });
+    const resolved = fromMarkdown("[[Équipe/Prise en main]]", linked, { wikiLinks: { ...wikiLinks, resolve: (t) => t.toLowerCase().replace(/ /g, "-").replace("é", "e") } });
+    expect(resolved.content?.[0]?.content?.[0]).toEqual({ type: "page_link", attrs: { name: "equipe/prise-en-main" } });
     // Without the option, brackets are text.
-    expect(JSON.stringify(fromMarkdown("[[cinemas/lyon]]", linked))).not.toContain("page_link");
+    expect(JSON.stringify(fromMarkdown("[[docs/install]]", linked))).not.toContain("page_link");
   });
 
   test("keeps straight quotes, as they were typed", () => {

@@ -26,8 +26,8 @@ export function pageNameOf(path: string): string {
 }
 
 /**
- * Obsidian writes `[[Lyon]]` for `Cinémas/Lyon.md` as long as no other note
- * is called Lyon. A target without a folder is looked for among the notes
+ * Obsidian writes `[[Onboarding]]` for `Équipe/Onboarding.md` as long as no
+ * other note is called Onboarding. A target without a folder is looked for among the notes
  * being imported and the pages that exist, by its last part, ignoring case
  * as Obsidian does; when there is no single one, it is taken as written.
  */
