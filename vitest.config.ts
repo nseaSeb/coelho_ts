@@ -3,7 +3,8 @@ import { workspaceAliases } from "./aliases.js";
 
 export default defineConfig({
   resolve: { alias: workspaceAliases },
+  esbuild: { jsx: "automatic" },
   test: {
-    include: ["packages/*/test/**/*.test.ts"],
+    include: ["packages/*/test/**/*.test.ts", "apps/*/test/**/*.test.tsx"],
   },
 });

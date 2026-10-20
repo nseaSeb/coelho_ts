@@ -27,8 +27,12 @@ sits behind the editor. This project separates the two:
 | Package | What | Status |
 | --- | --- | --- |
 | `@coelho/core` | schema, `validate`, `canonical`, `hash`, `toHtml`, `toInlineHtml`, `toText`, `isBlank`, trusted/untrusted rendering policy | parity with coelho on every fixture |
-| `@coelho/prosemirror` | coelho schema → ProseMirror `Schema`, plugins (input rules, suggestions) | planned |
-| `@coelho/react` | `<CoelhoEditor>`, `useCoelhoEditor`, React node views | planned |
+| `@coelho/prosemirror` | coelho schema → ProseMirror `Schema`, editing plugins, anchored comments plugin | working |
+| `@coelho/react` | `<CoelhoEditor>`, `useCoelhoEditor`, default toolbar | working |
+
+`apps/demo` (`pnpm --filter coelho-demo dev`, http://localhost:5180) shows
+the editor with anchored comments, and under it everything derived from
+the stored tree.
 
 ## Five minutes
 
@@ -66,6 +70,29 @@ const schema = extendSchema(defaultSchema(), {
 });
 ```
 
+## Anchored comments
+
+A thread points at a range of the document and is stored beside it, never
+inside it: commenting does not change the document, its canonical bytes
+or its hash.
+
+```ts
+interface Thread { id: string; anchor: { from: number; to: number; quote: string }; resolved: boolean; comments: Comment[] }
+```
+
+- In the editor, `commentsPlugin` draws threads as decorations and maps
+  their ranges through every change. Typing at the end of a commented
+  range does not extend it. Deleting the text loses the anchor; undo
+  finds it again.
+- `@coelho/core` computes positions and quotes on the stored JSON exactly
+  as ProseMirror does (checked on every range of a test document), so a
+  server can place a thread without an editor.
+- When the document changed elsewhere, `reanchor` finds the quote again,
+  nearest to where it was. A thread whose text is gone is kept, marked as
+  such, with what it said.
+- A comment's body is a coelho document under a schema of its own,
+  rendered with `policy: "untrusted"`.
+
 ## Parity
 
 `fixtures/corpus.json` is copied verbatim from coelho's test suite. Each
@@ -93,8 +120,8 @@ Node 20+, pnpm 10.
    schema; same input rules and suggestion triggers as the Phoenix hook.
 3. `@coelho/react`: the editor as a controlled component, node views as
    React components through portals, StrictMode-safe.
-4. Anchored comments: threads attached to text ranges that survive edits,
-   stored beside the document, never inside it.
+4. Comments: render threads on the page (`toHtml` with highlights),
+   mentions in comment bodies, collaborative editing over Yjs.
 
 ## License
 

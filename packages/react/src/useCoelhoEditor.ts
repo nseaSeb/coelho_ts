@@ -1,7 +1,7 @@
 import { canonical, type Node as CoelhoNode, type Schema as CoelhoSchema, type ValidationError } from "@coelho/core";
 import { coelhoPlugins, toProseMirrorDoc, toProseMirrorSchema } from "@coelho/prosemirror";
 import type { Node, Schema } from "prosemirror-model";
-import { EditorState, type Transaction } from "prosemirror-state";
+import { EditorState, type Plugin, type Transaction } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
@@ -22,6 +22,11 @@ export interface UseCoelhoEditorOptions {
    * Defaults to a `console.error`.
    */
   onInvalid?: ((errors: ValidationError[]) => void) | undefined;
+  /**
+   * Plugins added after coelho's own, such as `commentsPlugin`. Read once,
+   * when the editor is built: keep the array's identity stable.
+   */
+  plugins?: Plugin[] | undefined;
 }
 
 export interface CoelhoEditor {
@@ -42,6 +47,8 @@ export interface CoelhoEditor {
  */
 export function useCoelhoEditor(options: UseCoelhoEditorOptions): CoelhoEditor {
   const { schema, value, onChange, onInvalid } = options;
+  const pluginsRef = useRef(options.plugins);
+  pluginsRef.current = options.plugins;
   const pmSchema = useMemo(() => toProseMirrorSchema(schema), [schema]);
   const viewRef = useRef<EditorView | null>(null);
   const listeners = useRef(new Set<() => void>());
@@ -92,7 +99,7 @@ export function useCoelhoEditor(options: UseCoelhoEditorOptions): CoelhoEditor {
       };
       const doc = load(valueRef.current) ?? (pmSchema.topNodeType.createAndFill() as Node);
       viewRef.current = new EditorView(element, {
-        state: EditorState.create({ doc, plugins: coelhoPlugins(pmSchema) }),
+        state: EditorState.create({ doc, plugins: [...coelhoPlugins(pmSchema), ...(pluginsRef.current ?? [])] }),
         dispatchTransaction,
       });
       setMounted((n) => n + 1);

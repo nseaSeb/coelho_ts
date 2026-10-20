@@ -1,6 +1,6 @@
-import { canonical, defaultSchema, extendSchema, hash, isBlank, textLength, toHtml, toText, validate, type Node } from "@coelho/core";
-import { CoelhoEditor } from "@coelho/react";
+import { canonical, defaultSchema, extendSchema, hash, isBlank, reanchor, textLength, toHtml, toText, validate, type Node, type Thread } from "@coelho/core";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { CommentedEditor, type LiveThread } from "./Comments.js";
 
 // The default schema plus what an application adds: a mark with a class of
 // its own. The editor, the page and the validator all read this one object.
@@ -50,6 +50,35 @@ const initial: Node = {
   ],
 };
 
+// One thread to start with, placed by its quote alone: `reanchor` finds it.
+const initialThreads: Thread[] = [
+  {
+    id: "t_welcome",
+    anchor: reanchor(initial, schema, { from: 0, to: 0, quote: "stored as JSON" }) ?? { from: 0, to: 0, quote: "stored as JSON" },
+    resolved: false,
+    comments: [
+      {
+        id: "c_welcome",
+        author: "Sacha",
+        body: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                { type: "text", text: "This comment is not in the document: look at " },
+                { type: "text", text: "What the column holds", marks: [{ type: "italic" }] },
+                { type: "text", text: ". It lives beside it, with a range and a quote." },
+              ],
+            },
+          ],
+        },
+        createdAt: "2026-10-20T09:00:00.000Z",
+      },
+    ],
+  },
+];
+
 function Panel({ title, hint, children }: { title: string; hint?: string; children: ReactNode }): ReactNode {
   return (
     <section className="panel">
@@ -64,6 +93,8 @@ function Panel({ title, hint, children }: { title: string; hint?: string; childr
 
 export function App(): ReactNode {
   const [value, setValue] = useState<Node>(initial);
+  const [threads, setThreads] = useState<Thread[]>(initialThreads);
+  const [liveThreads, setLiveThreads] = useState<LiveThread[]>([]);
   const [digest, setDigest] = useState<string | null>(null);
 
   // Everything below the editor is recomputed from the stored tree on every
@@ -91,7 +122,30 @@ export function App(): ReactNode {
         coelho_ts <span>structured rich text, the storage layer in TypeScript</span>
       </h1>
 
-      <CoelhoEditor schema={schema} value={value} onChange={setValue} />
+      <CommentedEditor
+        schema={schema}
+        value={value}
+        onChange={setValue}
+        threads={threads}
+        onThreadsChange={setThreads}
+        onLiveThreads={(live) => setLiveThreads((previous) => (JSON.stringify(previous) === JSON.stringify(live) ? previous : live))}
+      />
+
+      <div className="actions">
+        <button
+          type="button"
+          title="Changes the stored document without going through the editor, as another session or a migration would"
+          onClick={() =>
+            setValue((current) => ({
+              ...current,
+              content: [{ type: "paragraph", content: [{ type: "text", text: "Another writer added this paragraph, outside the editor." }] }, ...(current.content ?? [])],
+            }))
+          }
+        >
+          Another writer adds a paragraph at the top
+        </button>
+        <span>The editor is reset to the new document; every thread finds its text again by its quote.</span>
+      </div>
 
       <div className="status">
         {result.ok ? (
@@ -119,6 +173,9 @@ export function App(): ReactNode {
         </Panel>
         <Panel title="What the column holds" hint={`canonical(doc) — sha256 ${digest ?? "null (nothing was agreed to)"}`}>
           <pre>{stored === null ? "—" : JSON.stringify(stored, null, 2)}</pre>
+        </Panel>
+        <Panel title="What the threads table holds" hint="beside the document, never inside it: the hash above does not move when you comment">
+          <pre>{JSON.stringify(liveThreads.map(({ orphaned, ...thread }) => ({ ...thread, ...(orphaned ? { orphaned } : {}) })), null, 2)}</pre>
         </Panel>
         <Panel title="Plain text for a search index" hint="toText(doc, schema)">
           <pre>{stored === null ? "" : toText(stored, schema)}</pre>
