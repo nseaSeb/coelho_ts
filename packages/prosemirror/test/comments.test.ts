@@ -1,4 +1,4 @@
-import { contentSize, defaultSchema, reanchor, textBetween, type Node as CoelhoNode } from "@coelho/core";
+import { anchorAt, contentSize, defaultSchema, reanchor, textBetween, type Node as CoelhoNode } from "@coelho/core";
 import { Node } from "prosemirror-model";
 import { history, undo } from "prosemirror-history";
 import { EditorState, TextSelection, type Transaction } from "prosemirror-state";
@@ -58,14 +58,14 @@ describe("positions agree with ProseMirror", () => {
 describe("comments plugin", () => {
   test("opens a thread on the selection and keeps the document untouched", () => {
     const state = comment(editor(), "t1", 12, 15);
-    expect(commentsState(state)?.anchors.get("t1")).toEqual({ from: 12, to: 15, quote: "cat" });
+    expect(commentsState(state)?.anchors.get("t1")).toMatchObject({ from: 12, to: 15, quote: "cat" });
     expect(state.doc.toJSON()).toEqual(Node.fromJSON(pm, json).toJSON());
   });
 
   test("follows its text when something is typed before it, and does not grow when typing at its end", () => {
     let state = comment(editor(), "t1", 12, 15);
     state = run(state, (s) => s.tr.insertText("Big ", 8));
-    expect(commentsState(state)?.anchors.get("t1")).toEqual({ from: 16, to: 19, quote: "cat" });
+    expect(commentsState(state)?.anchors.get("t1")).toMatchObject({ from: 16, to: 19, quote: "cat" });
     state = run(state, (s) => s.tr.insertText("s", 19));
     expect(commentsState(state)?.anchors.get("t1")?.quote).toBe("cat");
   });
@@ -77,7 +77,7 @@ describe("comments plugin", () => {
     expect(commentsState(state)?.lost.get("t1")?.quote).toBe("cat");
     let undone = state;
     undo(state, (tr) => (undone = state.apply(tr)));
-    expect(commentsState(undone)?.anchors.get("t1")).toEqual({ from: 12, to: 15, quote: "cat" });
+    expect(commentsState(undone)?.anchors.get("t1")).toMatchObject({ from: 12, to: 15, quote: "cat" });
   });
 
   test("does not reattach a lost thread to the same word typed again", () => {
@@ -85,6 +85,25 @@ describe("comments plugin", () => {
     state = run(state, (s) => s.tr.delete(12, 15));
     state = run(state, (s) => s.tr.insertText("cat", 12));
     expect(commentsState(state)?.anchors.has("t1")).toBe(false);
+  });
+
+  test("takes the context of an anchor with it, the way core does on the stored JSON", () => {
+    const state = comment(editor(), "t1", 12, 15);
+    expect(commentsState(state)?.anchors.get("t1")).toEqual(anchorAt(json, schema, 12, 15));
+  });
+
+  test("does not restore a deleted thread on another copy of its words", () => {
+    let state = comment(editor(), "t1", 12, 15);
+    state = run(state, (s) => s.tr.delete(12, 15));
+    const lost = commentsState(state)?.lost.get("t1");
+    expect(lost).toBeDefined();
+    const deleted = state.doc.toJSON() as CoelhoNode;
+    const elsewhere = { ...deleted, content: [{ type: "paragraph", content: [{ type: "text", text: "A cat elsewhere." }] }, ...(deleted.content ?? [])] };
+    const lostElsewhere = editor([{ id: "t1", anchor: lost!, lost: true }], elsewhere);
+    expect(commentsState(lostElsewhere)?.anchors.has("t1")).toBe(false);
+    expect(commentsState(lostElsewhere)?.lost.has("t1")).toBe(true);
+    // Without the flag, the word alone would have been enough.
+    expect(commentsState(editor([{ id: "t1", anchor: lost! }], elsewhere))?.anchors.has("t1")).toBe(true);
   });
 
   test("restores stored anchors, by quote when the document changed elsewhere", () => {

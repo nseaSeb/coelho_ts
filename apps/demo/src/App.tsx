@@ -144,7 +144,7 @@ export function App(): ReactNode {
         >
           Another writer adds a paragraph at the top
         </button>
-        <span>The editor is reset to the new document; every thread finds its text again by its quote.</span>
+        <span>The editor is reset to the new document; each thread finds its text again by its quote and the words around it, so a one-word comment does not jump to the same word in the new paragraph.</span>
       </div>
 
       <div className="status">

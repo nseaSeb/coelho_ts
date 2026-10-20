@@ -17,6 +17,25 @@ export interface Anchor {
   from: number;
   to: number;
   quote: string;
+  /**
+   * The text just before and just after the quote, as the W3C Web
+   * Annotation TextQuoteSelector keeps it. A short quote (a word) occurs
+   * many times; its context says which occurrence was meant.
+   */
+  prefix?: string;
+  suffix?: string;
+}
+
+/** How much context an anchor keeps on each side, in positions. */
+export const CONTEXT = 32;
+
+export interface ReanchorOptions {
+  /**
+   * Refuse an occurrence whose context does not mostly agree with the
+   * anchor's. For a thread whose text was deleted: bringing it back on any
+   * other copy of the same word would attach it to text nobody commented on.
+   */
+  requireContext?: boolean;
 }
 
 /** The size of a node in ProseMirror positions: a text's UTF-16 length, 1 for a leaf, its content plus 2 otherwise. */
@@ -107,20 +126,29 @@ function forEachText(document: Node, schema: Schema, from: number, to: number, b
 
 /** An anchor over a range, its quote taken from the document. */
 export function anchorAt(document: Node, schema: Schema, from: number, to: number): Anchor {
-  return { from, to, quote: textBetween(document, schema, from, to) };
+  const size = contentSize(document, schema);
+  return {
+    from,
+    to,
+    quote: textBetween(document, schema, from, to),
+    prefix: textBetween(document, schema, Math.max(0, from - CONTEXT), from),
+    suffix: textBetween(document, schema, to, Math.min(size, to + CONTEXT)),
+  };
 }
 
 /**
- * Finds where an anchor points in a document that may have changed since:
- * its own range when the quote is still there, otherwise the occurrence of
- * the quote closest to where it was. `null` when the quote is nowhere,
- * which is a thread whose text was deleted.
+ * Finds where an anchor points in a document that may have changed since.
+ * Every occurrence of the quote is a candidate; the one whose surrounding
+ * text agrees most with the anchor's prefix and suffix wins, and distance
+ * from where it was only breaks ties. `null` when the quote is nowhere, or
+ * when `requireContext` is set and no occurrence's context agrees.
  */
-export function reanchor(document: Node, schema: Schema, anchor: Anchor): Anchor | null {
-  const size = contentSize(document, schema);
-  const inRange = anchor.from >= 0 && anchor.from < anchor.to && anchor.to <= size;
-  if (inRange && textBetween(document, schema, anchor.from, anchor.to) === anchor.quote) return { ...anchor };
+export function reanchor(document: Node, schema: Schema, anchor: Anchor, options: ReanchorOptions = {}): Anchor | null {
   if (anchor.quote === "") return null;
+  const size = contentSize(document, schema);
+  const prefix = anchor.prefix ?? "";
+  const suffix = anchor.suffix ?? "";
+  const best = Math.max(0, prefix.length) + Math.max(0, suffix.length);
 
   // The whole document as text, and the position of every character in it.
   let text = "";
@@ -130,14 +158,34 @@ export function reanchor(document: Node, schema: Schema, anchor: Anchor): Anchor
     for (let i = 0; i < piece.length; i += 1) positions.push(pos === null ? null : pos + i);
   });
 
-  let best: Anchor | null = null;
+  let chosen: { anchor: Anchor; score: number; distance: number } | null = null;
   for (let index = text.indexOf(anchor.quote); index !== -1; index = text.indexOf(anchor.quote, index + 1)) {
     const span = positions.slice(index, index + anchor.quote.length);
-    const firstPos = span.find((pos) => pos !== null);
-    const lastPos = span.findLast((pos) => pos !== null);
-    if (firstPos == null || lastPos == null) continue;
-    const candidate = { from: firstPos, to: lastPos + 1, quote: anchor.quote };
-    if (best === null || Math.abs(candidate.from - anchor.from) < Math.abs(best.from - anchor.from)) best = candidate;
+    const from = span.find((pos) => pos !== null);
+    const last = span.findLast((pos) => pos !== null);
+    if (from == null || last == null) continue;
+    const to = last + 1;
+    const found = anchorAt(document, schema, from, to);
+    const score = commonSuffix(found.prefix ?? "", prefix) + commonPrefix(found.suffix ?? "", suffix);
+    const distance = Math.abs(from - anchor.from);
+    if (chosen === null || score > chosen.score || (score === chosen.score && distance < chosen.distance)) {
+      chosen = { anchor: found, score, distance };
+    }
   }
-  return best;
+  if (chosen === null) return null;
+  // Mostly agreeing: at least half of the context the anchor had.
+  if (options.requireContext && (best === 0 || chosen.score * 2 < best)) return null;
+  return chosen.anchor;
+}
+
+function commonPrefix(a: string, b: string): number {
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i += 1;
+  return i;
+}
+
+function commonSuffix(a: string, b: string): number {
+  let i = 0;
+  while (i < a.length && i < b.length && a[a.length - 1 - i] === b[b.length - 1 - i]) i += 1;
+  return i;
 }

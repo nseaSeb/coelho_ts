@@ -1,4 +1,4 @@
-import { reanchor, type Anchor, type Node as CoelhoNode, type Schema as CoelhoSchema } from "@coelho/core";
+import { CONTEXT, reanchor, type Anchor, type Node as CoelhoNode, type Schema as CoelhoSchema } from "@coelho/core";
 import type { Node } from "prosemirror-model";
 import { isHistoryTransaction } from "prosemirror-history";
 import { Plugin, PluginKey, TextSelection, type Command, type EditorState, type Transaction } from "prosemirror-state";
@@ -9,6 +9,12 @@ export interface StoredAnchor {
   id: string;
   anchor: Anchor;
   resolved?: boolean;
+  /**
+   * The thread's text was deleted when it was stored. It is then only
+   * brought back where the text around its quote agrees too, never on
+   * another copy of the same words.
+   */
+  lost?: boolean;
 }
 
 export interface CommentsPluginOptions {
@@ -121,9 +127,9 @@ function restore(doc: Node, options: CommentsPluginOptions): CommentsState {
   const anchors = new Map<string, Anchor>();
   const lost = new Map<string, Anchor>();
   const resolved = new Set<string>();
-  for (const { id, anchor, resolved: isResolved } of stored) {
+  for (const { id, anchor, resolved: isResolved, lost: wasLost } of stored) {
     if (isResolved) resolved.add(id);
-    const found = reanchor(json, options.schema, anchor);
+    const found = reanchor(json, options.schema, anchor, { requireContext: wasLost ?? false });
     if (found === null) lost.set(id, anchor);
     else anchors.set(id, found);
   }
@@ -136,14 +142,19 @@ function apply(tr: Transaction, previous: CommentsState, schema: CoelhoSchema): 
 
   let active = previous.active;
   const resolved = new Set(previous.resolved);
-  const lost = new Map(previous.lost);
+  // A lost anchor keeps following the document, so the position an undo
+  // hands back to it is where its text would now be.
+  const lost = new Map<string, Anchor>();
+  for (const [id, anchor] of previous.lost) lost.set(id, { ...anchor, from: tr.mapping.map(anchor.from, -1), to: tr.mapping.map(anchor.to, 1) });
   const ranges = new Map<string, { from: number; to: number }>();
   for (const decoration of previous.decorations.map(tr.mapping, tr.doc).find()) {
     ranges.set((decoration.spec as { id: string }).id, { from: decoration.from, to: decoration.to });
   }
   // A decoration whose text was deleted is gone from the mapped set; what it
   // covered is remembered, so an undo can put the thread back.
-  for (const [id, anchor] of previous.anchors) if (!ranges.has(id)) lost.set(id, anchor);
+  for (const [id, anchor] of previous.anchors) {
+    if (!ranges.has(id)) lost.set(id, { ...anchor, from: tr.mapping.map(anchor.from, -1), to: tr.mapping.map(anchor.to, 1) });
+  }
 
   if (action?.type === "add") {
     ranges.set(action.id, { from: action.from, to: action.to });
@@ -164,7 +175,7 @@ function apply(tr: Transaction, previous: CommentsState, schema: CoelhoSchema): 
   if (lost.size > 0 && isHistoryTransaction(tr)) {
     const json = tr.doc.toJSON() as CoelhoNode;
     for (const [id, anchor] of lost) {
-      const found = reanchor(json, schema, { ...anchor, from: tr.mapping.map(anchor.from, -1), to: tr.mapping.map(anchor.to, 1) });
+      const found = reanchor(json, schema, anchor, { requireContext: true });
       if (found !== null) {
         ranges.set(id, found);
         lost.delete(id);
@@ -173,9 +184,19 @@ function apply(tr: Transaction, previous: CommentsState, schema: CoelhoSchema): 
   }
 
   const anchors = new Map<string, Anchor>();
-  for (const [id, { from, to }] of ranges) anchors.set(id, { from, to, quote: tr.doc.textBetween(from, to, "\n", "") });
+  for (const [id, { from, to }] of ranges) anchors.set(id, anchorIn(tr.doc, from, to));
   if (active !== null && !anchors.has(active) && !lost.has(active)) active = null;
   return build(tr.doc, anchors, lost, active, resolved);
+}
+
+function anchorIn(doc: Node, from: number, to: number): Anchor {
+  return {
+    from,
+    to,
+    quote: doc.textBetween(from, to, "\n", ""),
+    prefix: doc.textBetween(Math.max(0, from - CONTEXT), from, "\n", ""),
+    suffix: doc.textBetween(to, Math.min(doc.content.size, to + CONTEXT), "\n", ""),
+  };
 }
 
 function build(doc: Node, anchors: Map<string, Anchor>, lost: Map<string, Anchor>, active: string | null, resolved: Set<string>): CommentsState {

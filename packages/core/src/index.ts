@@ -5,5 +5,5 @@ export { validate, canonical, hash, toText, isBlank, textLength, characters, typ
 export { toHtml, toInlineHtml, renderDom, escape, tag, voidTag, attr, safeUrl, type RenderOptions, type InlineRenderOptions, type Policy } from "./render.js";
 export { validateAttr, sameJson } from "./attr.js";
 export { parse as parseContentExpression, matches as matchesContentExpression, type Ast as ContentExpression } from "./contentExpression.js";
-export { anchorAt, contentSize, nodeSize, reanchor, textBetween, type Anchor } from "./anchors.js";
+export { anchorAt, CONTEXT, contentSize, nodeSize, reanchor, textBetween, type Anchor, type ReanchorOptions } from "./anchors.js";
 export type { Comment, Thread } from "./comments.js";

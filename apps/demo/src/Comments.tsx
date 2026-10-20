@@ -52,7 +52,7 @@ export function CommentedEditor({ schema, value, onChange, threads, onThreadsCha
   // threads as the editor last placed them, found again by their quote.
   const live = useRef<LiveThread[]>(threads.map((thread) => ({ ...thread, orphaned: false })));
   const [plugins] = useState(() => [
-    commentsPlugin({ schema, restore: () => live.current.map(({ id, anchor, resolved }) => ({ id, anchor, resolved })) }),
+    commentsPlugin({ schema, restore: () => live.current.map(({ id, anchor, resolved, orphaned }) => ({ id, anchor, resolved, lost: orphaned })) }),
   ]);
   const editor = useCoelhoEditor({ schema, value, onChange, plugins });
   const [author, setAuthor] = useState(AUTHORS[0] as string);

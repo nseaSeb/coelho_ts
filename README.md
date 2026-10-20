@@ -77,7 +77,7 @@ inside it: commenting does not change the document, its canonical bytes
 or its hash.
 
 ```ts
-interface Thread { id: string; anchor: { from: number; to: number; quote: string }; resolved: boolean; comments: Comment[] }
+interface Thread { id: string; anchor: { from: number; to: number; quote: string; prefix?: string; suffix?: string }; resolved: boolean; comments: Comment[] }
 ```
 
 - In the editor, `commentsPlugin` draws threads as decorations and maps
@@ -87,9 +87,14 @@ interface Thread { id: string; anchor: { from: number; to: number; quote: string
 - `@coelho/core` computes positions and quotes on the stored JSON exactly
   as ProseMirror does (checked on every range of a test document), so a
   server can place a thread without an editor.
-- When the document changed elsewhere, `reanchor` finds the quote again,
-  nearest to where it was. A thread whose text is gone is kept, marked as
-  such, with what it said.
+- An anchor keeps the text just before and after its quote, the shape of
+  the W3C Web Annotation `TextQuoteSelector`. When the document changed
+  elsewhere, `reanchor` ranks every occurrence of the quote by how well
+  its surroundings agree, and uses distance only to break ties: a comment
+  on one word does not jump to the same word in a paragraph added above.
+- A thread whose text is gone is kept, marked as such, with what it said.
+  Undo brings it back; retyping the same words, or reloading a document
+  that has them somewhere else, does not.
 - A comment's body is a coelho document under a schema of its own,
   rendered with `policy: "untrusted"`.
 

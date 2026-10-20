@@ -28,19 +28,19 @@ describe("reanchor", () => {
   const anchor = anchorAt(doc, schema, 5, 8);
 
   test("keeps a range whose text is still there", () => {
-    expect(reanchor(doc, schema, anchor)).toEqual({ from: 5, to: 8, quote: "cat" });
+    expect(reanchor(doc, schema, anchor)).toMatchObject({ from: 5, to: 8, quote: "cat" });
   });
 
   test("follows its quote when the document changed elsewhere", () => {
     const edited: Node = { ...doc, content: [paragraph("Another writer was here."), ...(doc.content ?? [])] };
     const moved = reanchor(edited, schema, anchor);
-    expect(moved).toEqual({ from: 31, to: 34, quote: "cat" });
+    expect(moved).toMatchObject({ from: 31, to: 34, quote: "cat" });
     expect(textBetween(edited, schema, 31, 34)).toBe("cat");
   });
 
   test("picks the occurrence closest to where it was", () => {
     const twice: Node = { type: "doc", content: [paragraph("cat one"), paragraph("cat two"), paragraph("cat three")] };
-    expect(reanchor(twice, schema, { from: 10, to: 13, quote: "cat" })).toEqual({ from: 10, to: 13, quote: "cat" });
+    expect(reanchor(twice, schema, { from: 10, to: 13, quote: "cat" })).toMatchObject({ from: 10, to: 13, quote: "cat" });
     expect(reanchor(twice, schema, { from: 12, to: 15, quote: "cat" })?.from).toBe(10);
   });
 
@@ -53,5 +53,29 @@ describe("reanchor", () => {
 
   test("is null when the text was deleted", () => {
     expect(reanchor({ type: "doc", content: [paragraph("The dog sat.")] }, schema, anchor)).toBeNull();
+  });
+});
+
+describe("reanchor with context", () => {
+  const before: Node = { type: "doc", content: [paragraph("The cat sat."), paragraph("A cat ran.")] };
+  // "cat" in the second paragraph: 14 for the first paragraph, then 1 + "A ".
+  const anchor = anchorAt(before, schema, 17, 20);
+
+  test("lands on the right occurrence when an insertion moves it past another one", () => {
+    expect(anchor.quote).toBe("cat");
+    const after: Node = { ...before, content: [paragraph("my cat"), ...(before.content ?? [])] };
+    const found = reanchor(after, schema, anchor);
+    expect(found?.from).toBe(25);
+    expect(found !== null && textBetween(after, schema, found.from - 2, found.to + 4)).toBe("A cat ran");
+  });
+
+  test("does not bring a deleted thread back on another copy of its words", () => {
+    const deleted: Node = { type: "doc", content: [paragraph("The cat sat."), paragraph("A ran.")] };
+    expect(reanchor(deleted, schema, anchor)?.from).toBe(5);
+    expect(reanchor(deleted, schema, anchor, { requireContext: true })).toBeNull();
+  });
+
+  test("still brings it back where its context is intact", () => {
+    expect(reanchor(before, schema, { ...anchor, from: 0, to: 0 }, { requireContext: true })).toMatchObject({ from: 17, to: 20 });
   });
 });
