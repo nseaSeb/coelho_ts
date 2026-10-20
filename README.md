@@ -112,9 +112,10 @@ is being typed (a trigger must start a word, so `a@b` is an address; the
 query ends at the first space; nothing opens in code), and the list is
 the application's. Arrows, Enter and Tab reach the list through the
 editor, so focus never leaves the text; Escape dismisses until the writer
-starts again elsewhere. The editor carries the combobox ARIA attributes
-while the list is open, and a choice replaces the range the editor holds
-when it is made.
+starts again elsewhere. The editor is a multi-line text box, which
+points at the list and its highlighted option (`aria-controls`,
+`aria-activedescendant`) only while the list is open, and a choice
+replaces the range the editor holds when it is made.
 
 ```tsx
 const [{ plugin, keys }] = useState(() => createSuggestion(["@"]));
@@ -182,14 +183,16 @@ Node 20+, pnpm 10.
 
 ## Roadmap
 
+Done: the storage layer with parity, `sanitize`, the ProseMirror adapter,
+the controlled React editor (StrictMode-safe: every jsdom test mounts
+under StrictMode), React node views, suggestions, anchored comments.
+
 1. `@coelho/core`: Markdown rendering, `toJSON` of the schema in the
    shape coelho's browser hook expects.
-2. `@coelho/prosemirror`: build the ProseMirror schema from a coelho
-   schema; same input rules and suggestion triggers as the Phoenix hook.
-3. `@coelho/react`: the editor as a controlled component, node views as
-   React components through portals, StrictMode-safe.
-4. Comments: render threads on the page (`toHtml` with highlights),
-   mentions in comment bodies, collaborative editing over Yjs.
+2. Node views with editable content (only leaf nodes today).
+3. Comments: render threads on the page (`toHtml` with highlights),
+   mentions in comment bodies.
+4. Collaborative editing over Yjs.
 
 ## License
 

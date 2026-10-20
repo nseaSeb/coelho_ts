@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { defaultSchema, validate, type Node, type ValidationError } from "@coelho/core";
 import { undoDepth } from "prosemirror-history";
-import { act, useState, type ReactNode } from "react";
+import { act, StrictMode, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import { CoelhoEditor, type CoelhoEditorHandle } from "../src/index.js";
@@ -30,7 +30,7 @@ function mount(element: ReactNode): HTMLElement {
   const container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
-  act(() => root?.render(element));
+  act(() => root?.render(<StrictMode>{element}</StrictMode>));
   return container;
 }
 

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { defaultSchema, escape, extendSchema, tag, toHtml, validate, type Node } from "@coelho/core";
 import { createSuggestion, replaceSuggestion, type SuggestionKeys } from "@coelho/prosemirror";
-import { act, useState, type ReactNode } from "react";
+import { act, StrictMode, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import { SuggestionMenu, useCoelhoEditor, useSuggestion, type CoelhoEditorHandle, type NodeViewProps } from "../src/index.js";
@@ -83,7 +83,7 @@ function mount(initial: Node): HTMLElement {
   const container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
-  act(() => root?.render(<Harness initial={initial} />));
+  act(() => root?.render(<StrictMode><Harness initial={initial} /></StrictMode>));
   return container;
 }
 
@@ -119,7 +119,9 @@ describe("suggestions", () => {
     const options = (): string[] => [...container.querySelectorAll('[role="option"]')].map((option) => `${option.textContent}${option.getAttribute("aria-selected") === "true" ? "*" : ""}`);
     expect(options()).toEqual(["Camille*", "Carla"]);
     const dom = handle!.view!.dom;
-    expect(dom.getAttribute("aria-expanded")).toBe("true");
+    expect(dom.getAttribute("role")).toBe("textbox");
+    expect(dom.getAttribute("aria-multiline")).toBe("true");
+    expect(dom.getAttribute("aria-controls")).toBe(container.querySelector('[role="listbox"]')?.id);
     expect(dom.getAttribute("aria-activedescendant")).toBe(container.querySelector('[aria-selected="true"]')?.id);
 
     key("ArrowDown");
@@ -127,7 +129,9 @@ describe("suggestions", () => {
     key("Enter");
 
     expect(container.querySelector('[role="listbox"]')).toBeNull();
-    expect(dom.getAttribute("aria-expanded")).toBe("false");
+    expect(dom.hasAttribute("aria-activedescendant")).toBe(false);
+    expect(dom.hasAttribute("aria-controls")).toBe(false);
+    expect(dom.hasAttribute("aria-autocomplete")).toBe(false);
     expect(container.querySelector(".coelho-node-view-mention b")?.textContent).toBe("Carla");
     const result = validate(stored, schema);
     expect(result.ok && result.document.content?.[0]?.content).toEqual([

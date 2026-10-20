@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import { App } from "../src/App.js";
@@ -32,7 +32,7 @@ function mount(): HTMLElement {
   const container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
-  act(() => root?.render(<App />));
+  act(() => root?.render(<StrictMode><App /></StrictMode>));
   return container;
 }
 

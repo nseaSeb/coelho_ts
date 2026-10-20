@@ -28,8 +28,9 @@ export interface Suggestion<T> {
  * The list half of a suggestion: what to show, which item is highlighted,
  * and the keys that move through it. Arrow keys, Enter and Tab come from
  * the editor through `keys`, so focus never leaves the text; Escape is the
- * plugin's own. The editor's element carries the combobox ARIA attributes
- * while the list is open.
+ * plugin's own. The editor's element is a multi-line text box, and carries
+ * `aria-autocomplete`, `aria-controls` and `aria-activedescendant` while the
+ * list is open.
  */
 export function useSuggestion<T>(editor: CoelhoEditor, options: UseSuggestionOptions<T>): Suggestion<T> {
   const match = editor.state === null ? null : suggestionState(editor.state);
@@ -79,16 +80,20 @@ export function useSuggestion<T>(editor: CoelhoEditor, options: UseSuggestionOpt
 
   const open = match !== null && items.length > 0;
   const active = latest.current.index;
+  // The editor is a multi-line text box, which a combobox is not. While the
+  // list is open it says that it completes from a list, which list, and
+  // which option is highlighted; once it closes, it says nothing of it.
   useEffect(() => {
     if (view === null) return;
     const dom = view.dom;
-    dom.setAttribute("role", "combobox");
-    dom.setAttribute("aria-autocomplete", "list");
-    dom.setAttribute("aria-expanded", String(open));
+    dom.setAttribute("role", "textbox");
+    dom.setAttribute("aria-multiline", "true");
     if (open) {
+      dom.setAttribute("aria-autocomplete", "list");
       dom.setAttribute("aria-controls", listId);
       dom.setAttribute("aria-activedescendant", `${listId}-${active}`);
     } else {
+      dom.removeAttribute("aria-autocomplete");
       dom.removeAttribute("aria-controls");
       dom.removeAttribute("aria-activedescendant");
     }
