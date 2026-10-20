@@ -25,6 +25,10 @@ The four packages are versioned together.
   element.
 - **@nseaprotector/coelho-core**: `quoteMarkdown` writes Markdown as a
   quote, for a node override such as a callout.
+- **@nseaprotector/coelho-collab**: `sharedThreads(...).places()` lists the
+  threads as `list` does, without their comments; `source.threads` uses it,
+  so placing threads after a remote change no longer repairs every comment
+  body.
 
 ## 0.2.0 — 2026-10-20
 

@@ -167,9 +167,10 @@ export function createNotesServer(options: NotesServerOptions): Server {
       const room = roomOf(documentName);
       if (room === null) return;
       if (room.kind === "page") return persist(room.page, document, state, (lastContext as StoreContext | undefined) ?? {});
-      // The threads as JSON beside the state, for the API. Only the server
-      // writes this room, and it repaired every body as it wrote it.
-      await store.saveThreads(room.page, state, sharedThreads(document, "").list());
+      // The threads as JSON beside the state, for the API, repaired once
+      // more on the way out: the server wrote every body repaired, but this
+      // is the last check before they leave, whatever the state came from.
+      await store.saveThreads(room.page, state, sharedThreads(document, "", { bodies: commentSchema }).list());
     },
   });
 
@@ -193,7 +194,7 @@ export function createNotesServer(options: NotesServerOptions): Server {
       },
     }),
   );
-  app.use(["/api/pages", "/api/export", "/api/search"], async (request, response, next) => {
+  app.use(["/api/pages", "/api/export", "/api/search", "/api/import"], async (request, response, next) => {
     const user = await userFrom(accounts, request.headers.cookie);
     if (user === null) return void response.status(401).json({ error: "sign in first" });
     response.locals.user = user;
@@ -205,13 +206,20 @@ export function createNotesServer(options: NotesServerOptions): Server {
     if (isPageName(name)) next();
     else response.status(400).json({ error: "not a page name" });
   });
+  // A name that is not a page's may be stored from before names were
+  // checked everywhere: no route serves it, so it is listed nowhere.
+  const named = <T extends { name: string }>(rows: T[]): T[] => rows.filter((row) => isPageName(row.name));
   app.get("/api/pages", async (_request, response) => {
-    response.json(await store.list());
+    response.json(named(await store.list()));
   });
   // The vault: one Markdown file per page, in folders, links as Obsidian writes them.
   app.get("/api/export", async (_request, response) => {
     // A name that is not a page's would be a path out of the folder it is unzipped in.
-    const pages = (await store.all()).filter((page) => isPageName(page.name));
+    const stored = await store.all();
+    const pages = named(stored);
+    if (pages.length < stored.length) {
+      console.warn(`export: left out ${stored.length - pages.length} stored name(s) that are not a page's: ${JSON.stringify(stored.filter((page) => !isPageName(page.name)).map((page) => page.name))}`);
+    }
     const files = pages.map((page) => ({
       path: `${page.name}.md`,
       data: Buffer.from(`${toMarkdown(page.body, schema, { nodes: { page_link: (node) => `[[${String(node.attrs?.name)}]]` } })}\n`, "utf8"),
@@ -222,17 +230,16 @@ export function createNotesServer(options: NotesServerOptions): Server {
   });
 
   app.get("/api/search", async (request, response) => {
-    response.json(await store.search(String(request.query.q ?? "").slice(0, 200)));
+    response.json(named(await store.search(String(request.query.q ?? "").slice(0, 200))));
   });
 
   // Pages read from Markdown in the browser, which has the DOM the reading
   // needs. Each is a claim, revalidated here, and written into its room
   // through the server's own connection: whoever has it open sees it
   // change, and it is stored as anyone's change is, under who imported it.
-  // The session is checked before the body, the only large one, is read.
-  const editorOnly: express.RequestHandler = async (request, response, next) => {
-    const user = (response.locals.user as User | undefined) ?? (await userFrom(accounts, request.headers.cookie));
-    if (user === null) return void response.status(401).json({ error: "sign in first" });
+  // The session is checked, above, before the body, the only large one, is read.
+  const editorOnly: express.RequestHandler = (_request, response, next) => {
+    const user = response.locals.user as User;
     if (user.role === "reader") return void response.status(403).json({ error: "readers cannot change pages" });
     response.locals.user = user;
     next();
@@ -312,10 +319,13 @@ export function createNotesServer(options: NotesServerOptions): Server {
 
   const commentBy = (user: User, body: Node): Comment => ({ id: `c_${randomUUID()}`, author: user.name, createdAt: new Date().toISOString(), body });
 
-  const refusals: Record<number, string> = { 403: "only its author, an editor or an admin", 404: "no such thread", 409: "this thread is full" };
-  const answer = (response: express.Response, outcome: number): void => {
+  type Refusal = 403 | 404 | 409;
+  type Outcome = 200 | 201 | 204 | Refusal;
+  const refusals: Record<Refusal, string> = { 403: "only its author, an editor or an admin", 404: "no such thread", 409: "this thread is full" };
+  const answer = (response: express.Response, outcome: Outcome): void => {
     if (outcome === 204) response.status(204).end();
-    else response.status(outcome).json(outcome < 300 ? {} : { error: refusals[outcome] });
+    else if (outcome === 200 || outcome === 201) response.status(outcome).json({});
+    else response.status(outcome).json({ error: refusals[outcome] });
   };
 
   app.get("/api/pages/:name/threads", async (request, response) => {
@@ -332,7 +342,7 @@ export function createNotesServer(options: NotesServerOptions): Server {
     const where = rangeOf(range);
     const first = commentBody(body);
     if (quote === null || quote === "" || prefix === null || suffix === null || where === null || first === null) {
-      return void response.status(400).json({ error: "a page, a quote, a range and something to say" });
+      return void response.status(400).json({ error: "a quote, a range and something to say" });
     }
     const id = `t_${randomUUID()}`;
     const made = await inThreads(name, user, (doc) => {
@@ -354,7 +364,7 @@ export function createNotesServer(options: NotesServerOptions): Server {
     const user = response.locals.user as User;
     const body = commentBody((request.body as Record<string, unknown> | undefined)?.body);
     if (body === null) return void response.status(400).json({ error: "something to say" });
-    const outcome = await inThreads(String(request.params.name), user, (doc) => {
+    const outcome = await inThreads<Outcome>(String(request.params.name), user, (doc) => {
       const thread = threadOf(doc, String(request.params.id));
       if (thread === null) return 404;
       const comments = thread.get("comments");
@@ -369,7 +379,7 @@ export function createNotesServer(options: NotesServerOptions): Server {
     const user = response.locals.user as User;
     const resolved = (request.body as Record<string, unknown> | undefined)?.resolved;
     if (typeof resolved !== "boolean") return void response.status(400).json({ error: "resolved: true or false" });
-    const outcome = await inThreads(String(request.params.name), user, (doc) => {
+    const outcome = await inThreads<Outcome>(String(request.params.name), user, (doc) => {
       const thread = threadOf(doc, String(request.params.id));
       if (thread === null) return 404;
       if (!mayManage(user, thread)) return 403;
@@ -381,7 +391,7 @@ export function createNotesServer(options: NotesServerOptions): Server {
 
   app.delete("/api/pages/:name/threads/:id", async (request, response) => {
     const user = response.locals.user as User;
-    const outcome = await inThreads(String(request.params.name), user, (doc) => {
+    const outcome = await inThreads<Outcome>(String(request.params.name), user, (doc) => {
       const thread = threadOf(doc, String(request.params.id));
       if (thread === null) return 404;
       if (!mayManage(user, thread)) return 403;
@@ -415,7 +425,7 @@ export function createNotesServer(options: NotesServerOptions): Server {
   });
 
   app.get("/api/pages/:name/backlinks", async (request, response) => {
-    response.json(await store.backlinks(request.params.name));
+    response.json(named(await store.backlinks(request.params.name)));
   });
   app.get("/api/pages/:name", async (request, response) => {
     const page = await store.get(request.params.name);

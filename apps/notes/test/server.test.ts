@@ -580,6 +580,43 @@ describe("comment threads", () => {
     expect(statuses).toEqual([400, 400, 400, 400]);
   });
 
+  test("bodies are repaired again on their way to the API, whatever the stored state holds", async () => {
+    const store = memoryStore();
+    const old = new Y.Doc();
+    const forged = new Y.Map<unknown>();
+    old.getMap("coelho-threads").set("t_old", forged);
+    forged.set("quote", "q");
+    forged.set("opened", 1);
+    forged.set("comments", Y.Array.from([{ id: "c_old", author: "Ada", createdAt: "", body: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "click", marks: [{ type: "link", attrs: { href: "javascript:alert(1)" } }] }] }] } }]));
+    await store.saveThreads("page", Y.encodeStateAsUpdate(old), []);
+    const { http } = await start(store);
+    const ada = await signUp(http, "Ada");
+    await call(http, "/api/pages/page/threads", { body: { anchor: { quote: "new" }, range, body: body("x") }, cookie: ada });
+    await until(async () => (await store.threads("page")).length === 2);
+    const listed = (await (await call(http, "/api/pages/page/threads", { cookie: ada })).json()) as Listed[];
+    expect(listed.find((thread) => thread.id === "t_old")?.comments[0]?.body).toEqual(body("click"));
+  });
+
+  test("a stored name that is not a page's is listed, found and linked from nowhere", async () => {
+    const store = memoryStore();
+    await store.save({ name: "../../evil", body: { type: "doc", content: [{ type: "paragraph", content: [{ type: "page_link", attrs: { name: "home" } }] }] }, hash: null, text: "evil words", errors: [], updatedBy: null, links: ["home"] }, new Uint8Array());
+    const { http } = await start(store);
+    const ada = await signUp(http, "Ada");
+    expect(await (await call(http, "/api/pages", { cookie: ada })).json()).toEqual([]);
+    expect(await (await call(http, "/api/search?q=evil", { cookie: ada })).json()).toEqual([]);
+    expect(await (await call(http, "/api/pages/home/backlinks", { cookie: ada })).json()).toEqual([]);
+  });
+
+  test("an import looks its session up once", async () => {
+    const accounts = memoryAccounts();
+    const { http } = await start(memoryStore(), accounts);
+    const ada = await signUp(http, "Ada");
+    const lookup = vi.spyOn(accounts, "sessionUser");
+    expect((await call(http, "/api/import", { body: { pages: [] }, cookie: ada })).status).toBe(200);
+    expect(lookup).toHaveBeenCalledTimes(1);
+    expect((await call(http, "/api/import", { body: { pages: [] } })).status).toBe(401);
+  });
+
   test("an export leaves out a stored name that is not a page's", async () => {
     const store = memoryStore();
     await store.save({ name: "../../evil", body: { type: "doc", content: [{ type: "paragraph" }] }, hash: null, text: "", errors: [], updatedBy: null, links: [] }, new Uint8Array());

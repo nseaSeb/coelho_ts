@@ -16,6 +16,12 @@ export interface SharedThreads {
   source: AnchorSource;
   /** Every thread this writer can see, in the order they were opened. */
   list(): SharedThread[];
+  /**
+   * The same threads as `list`, in the same order, without their comments:
+   * where each one is and whether it is resolved. What `source` gives the
+   * editor on every change, so no body is read or repaired for it.
+   */
+  places(): Array<Pick<SharedThread, "id" | "anchor" | "resolved">>;
   /** Opens a thread as a draft, before its range is recorded by `addComment`. */
   open(id: string, anchor: Anchor): void;
   /** Adds a comment; the first one publishes the draft. */
@@ -65,24 +71,31 @@ export function sharedThreads(doc: Y.Doc, author: string, options: SharedThreads
     };
   };
 
+  const place = (id: string, entry: Y.Map<unknown>): Pick<SharedThread, "id" | "anchor" | "resolved"> => ({
+    id,
+    anchor: { from: 0, to: 0, quote: text(entry.get("quote")), prefix: text(entry.get("prefix")), suffix: text(entry.get("suffix")) },
+    resolved: entry.get("resolved") === true,
+  });
+
   const read = (id: string, entry: Y.Map<unknown>): SharedThread => {
     const comments = entry.get("comments");
     return {
-      id,
-      anchor: { from: 0, to: 0, quote: text(entry.get("quote")), prefix: text(entry.get("prefix")), suffix: text(entry.get("suffix")) },
-      resolved: entry.get("resolved") === true,
+      ...place(id, entry),
       comments: comments instanceof Y.Array ? comments.toArray().flatMap((value) => comment(value) ?? []) : [],
       draft: entry.get("draft") !== undefined,
     };
   };
 
-  const list = (): SharedThread[] => {
-    const out: Array<[number, SharedThread]> = [];
+  /** The threads this writer can see, in the order they were opened. */
+  const visibleEntries = (): Array<[string, Y.Map<unknown>]> => {
+    const out: Array<[number, string, Y.Map<unknown>]> = [];
     for (const [id, entry] of threads.entries()) {
-      if (entry instanceof Y.Map && visible(entry)) out.push([Number(entry.get("opened")) || 0, read(id, entry)]);
+      if (entry instanceof Y.Map && visible(entry)) out.push([Number(entry.get("opened")) || 0, id, entry]);
     }
-    return out.sort(([a], [b]) => a - b).map(([, shared]) => shared);
+    return out.sort(([a], [b]) => a - b).map(([, id, entry]) => [id, entry]);
   };
+  const list = (): SharedThread[] => visibleEntries().map(([id, entry]) => read(id, entry));
+  const places = (): Array<Pick<SharedThread, "id" | "anchor" | "resolved">> => visibleEntries().map(([id, entry]) => place(id, entry));
 
   const anchors = relativeAnchors({
     get: (id) => thread(id)?.get("range") as RelativeRange | undefined,
@@ -90,8 +103,9 @@ export function sharedThreads(doc: Y.Doc, author: string, options: SharedThreads
   });
 
   return {
-    source: { ...anchors, threads: () => list().map(({ id, anchor, resolved }) => ({ id, anchor, resolved })) },
+    source: { ...anchors, threads: places },
     list,
+    places,
     open: (id, anchor) =>
       doc.transact(() => {
         const entry = new Y.Map<unknown>();

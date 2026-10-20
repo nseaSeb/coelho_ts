@@ -64,15 +64,10 @@ export class Discussion {
     });
     // Asked on every change to the page, someone else's typing included:
     // where each thread is and whether it is open, never its comments.
-    const text = (value: unknown): string => (typeof value === "string" ? value : "");
     this.source = {
       ...anchors,
       threads: () => [
-        ...[...map.entries()].flatMap(([id, entry]) =>
-          entry instanceof Y.Map
-            ? [{ id, anchor: { from: 0, to: 0, quote: text(entry.get("quote")), prefix: text(entry.get("prefix")), suffix: text(entry.get("suffix")) }, resolved: entry.get("resolved") === true }]
-            : [],
-        ),
+        ...this.shared.places(),
         ...[...this.drafts].map(([id, draft]) => ({ id, anchor: draft.anchor, resolved: false })),
       ],
     };

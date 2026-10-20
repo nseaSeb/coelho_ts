@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { anchorAt, defaultSchema, hash, type Comment, type Node as CoelhoNode } from "@nseaprotector/coelho-core";
+import { anchorAt, defaultSchema, extendSchema, hash, type Comment, type Node as CoelhoNode } from "@nseaprotector/coelho-core";
 import { addComment, coelhoPlugins, commentsPlugin, commentsState, proseMirrorSchemaFor, relocateComments } from "@nseaprotector/coelho-prosemirror";
 import { EditorState, TextSelection } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
@@ -186,5 +186,31 @@ describe("shared threads", () => {
     camille.threads.reply("broken", said("Camille", "Repaired."));
     await settle();
     expect(sacha.threads.list().find((thread) => thread.id === "broken")?.comments.map((c) => c.author)).toEqual(["Camille"]);
+  });
+});
+
+describe("placing threads", () => {
+  test("reads where they are, in the order they were opened, drafts of others left out, and no comment body", () => {
+    let checked = 0;
+    const bodies = extendSchema(defaultSchema(), {
+      nodes: { probe: { group: "inline", inline: true, void: true, attrs: { n: { validate: () => (checked++, null) } } } },
+    });
+    const doc = new Y.Doc();
+    const mine = sharedThreads(doc, "Ada", { bodies });
+    const theirs = sharedThreads(doc, "Lin", { bodies });
+    mine.open("second", { from: 0, to: 0, quote: "b" });
+    theirs.open("hidden", { from: 0, to: 0, quote: "c" });
+    mine.reply("second", { id: "c1", author: "Ada", createdAt: "", body: { type: "doc", content: [{ type: "paragraph", content: [{ type: "probe", attrs: { n: 1 } }] }] } });
+    const map = doc.getMap<Y.Map<unknown>>(THREADS);
+    map.get("second")?.set("opened", 2);
+    mine.open("first", { from: 0, to: 0, quote: "a" });
+    map.get("first")?.set("opened", 1);
+    expect(mine.source.threads().map((thread) => thread.id)).toEqual(["first", "second"]);
+    expect(mine.places()).toEqual(mine.list().map(({ id, anchor, resolved }) => ({ id, anchor, resolved })));
+    checked = 0;
+    mine.source.threads();
+    expect(checked).toBe(0);
+    mine.list();
+    expect(checked).toBeGreaterThan(0);
   });
 });
