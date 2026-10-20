@@ -3,14 +3,14 @@ import { hash, isBlank, sanitize, toMarkdown, toText, validate, type Comment, ty
 import { Database } from "@hocuspocus/extension-database";
 import { Server, type Extension } from "@hocuspocus/server";
 import express from "express";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import * as Y from "yjs";
 import { commentSchema, firstPage, isPageName, linksOf, NOT_WRITTEN, roomOf, schema, threadsRoomOf } from "./schema.js";
 import { zip } from "./zip.js";
 import type { AccountStore, Role, User } from "./accounts.js";
 import { authRoutes, colorOf, userFrom } from "./auth.js";
-import type { DocumentStore, Missing, VersionSummary } from "./store.js";
+import type { DocumentStore, VersionSummary } from "./store.js";
 
 export interface NotesServerOptions {
   store: DocumentStore;
@@ -46,8 +46,6 @@ export function createNotesServer(options: NotesServerOptions): Server {
   // Who changed each page since it was last stored. The store hook knows
   // only the last of them; a version written by two people is theirs both.
   const writers = new Map<string, Set<string>>();
-  // The pages linked to and not written yet, until a page is stored again.
-  let missing: Promise<Missing[]> | null = null;
 
   /**
    * What a store carries besides the document: who, why, and room for the
@@ -86,7 +84,6 @@ export function createNotesServer(options: NotesServerOptions): Server {
     if (names.length === 0 && context.user !== undefined) names.push(context.user.name);
     const author = names.length === 0 ? null : names.join(", ");
     await store.save({ name, body, hash: digest, text: toText(body, schema), errors, updatedBy: context.user?.name ?? null, links: linksOf(body) }, state);
-    missing = null;
     if (latest !== null && latest.hash === digest) {
       context.stored = latest;
       return;
@@ -213,34 +210,23 @@ export function createNotesServer(options: NotesServerOptions): Server {
     if (isPageName(name)) next();
     else response.status(400).json({ error: "not a page name" });
   });
-  // A name that is not a page's may be stored from before names were
-  // checked everywhere: no route serves it, so it is listed nowhere.
-  const named = <T extends { name: string }>(rows: T[]): T[] => rows.filter((row) => isPageName(row.name));
   // The pages, and the pages linked to and not written yet, worked out here
-  // rather than from every page's links in every browser; and once per
-  // change to the pages, not on every tab's poll.
-  app.get("/api/pages", async (_request, response) => {
-    const pages = await store.list();
-    const shown = named(pages);
-    if (missing === null) {
-      const hidden = pages.filter((page) => !isPageName(page.name)).map((page) => page.name);
-      const pending = store.missing(hidden).then((found) => named(found));
-      missing = pending;
-      // A failure is not kept: the next poll asks again.
-      pending.catch(() => {
-        if (missing === pending) missing = null;
-      });
-    }
-    response.json({ pages: shown, missing: await missing });
+  // rather than from every page's links in every browser. A tab polls with
+  // the ETag of what it has: an unchanged listing is a 304, with no body.
+  app.get("/api/pages", async (request, response) => {
+    const [pages, missing] = await Promise.all([store.list(), store.missing()]);
+    const body = JSON.stringify({ pages, missing });
+    const etag = `"${createHash("sha256").update(body).digest("base64url")}"`;
+    response.setHeader("Cache-Control", "no-cache");
+    response.setHeader("ETag", etag);
+    if (request.headers["if-none-match"] === etag) return void response.status(304).end();
+    response.type("json").send(body);
   });
   // The vault: one Markdown file per page, in folders, links as Obsidian writes them.
   app.get("/api/export", async (_request, response) => {
-    // A name that is not a page's would be a path out of the folder it is unzipped in.
-    const stored = await store.all();
-    const pages = named(stored);
-    if (pages.length < stored.length) {
-      console.warn(`export: left out ${stored.length - pages.length} stored name(s) that are not a page's: ${JSON.stringify(stored.filter((page) => !isPageName(page.name)).map((page) => page.name))}`);
-    }
+    // A name that is not a page's is quarantined when the server starts;
+    // checked again here all the same, as it would be a path out of the folder.
+    const pages = (await store.all()).filter((page) => isPageName(page.name));
     const files = pages.map((page) => ({
       path: `${page.name}.md`,
       data: Buffer.from(`${toMarkdown(page.body, schema, { nodes: { page_link: (node) => `[[${String(node.attrs?.name)}]]` } })}\n`, "utf8"),
@@ -251,7 +237,7 @@ export function createNotesServer(options: NotesServerOptions): Server {
   });
 
   app.get("/api/search", async (request, response) => {
-    response.json(named(await store.search(String(request.query.q ?? "").slice(0, 200))));
+    response.json(await store.search(String(request.query.q ?? "").slice(0, 200)));
   });
 
   // Pages read from Markdown in the browser, which has the DOM the reading
@@ -446,7 +432,7 @@ export function createNotesServer(options: NotesServerOptions): Server {
   });
 
   app.get("/api/pages/:name/backlinks", async (request, response) => {
-    response.json(named(await store.backlinks(request.params.name)));
+    response.json(await store.backlinks(request.params.name));
   });
   app.get("/api/pages/:name", async (request, response) => {
     const page = await store.get(request.params.name);
@@ -465,12 +451,23 @@ export function createNotesServer(options: NotesServerOptions): Server {
       }),
   };
 
+  // Names stored before every name was checked are moved out of the way
+  // before the first request: no route has to look out for them.
+  const quarantine: Extension = {
+    async onListen() {
+      const invalid = (await store.list()).map((page) => page.name).filter((name) => !isPageName(name));
+      if (invalid.length === 0) return;
+      await store.quarantine(invalid);
+      console.warn(`quarantined ${invalid.length} page(s) stored under a name that is not a page's: ${JSON.stringify(invalid)}`);
+    },
+  };
+
   const server = new Server({
     port: options.port ?? 1234,
     quiet: true,
     debounce: options.debounce ?? 1000,
     maxDebounce: 5000,
-    extensions: [authentication, persistence, seeding, http],
+    extensions: [quarantine, authentication, persistence, seeding, http],
   });
   return server;
 }

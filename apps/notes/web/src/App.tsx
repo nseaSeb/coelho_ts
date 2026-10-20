@@ -6,7 +6,7 @@ import { HocuspocusProvider, HocuspocusProviderWebsocket } from "@hocuspocus/pro
 import { Plugin } from "prosemirror-state";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { isPageName, NOT_WRITTEN, schema } from "../../server/schema.js";
-import { api, collabUrl, currentUser, type Me } from "./api.js";
+import { api, collabUrl, currentUser, poll, type Me } from "./api.js";
 import { People, SignIn } from "./Auth.js";
 import { History } from "./History.js";
 import { Comments, Discussion } from "./Threads.js";
@@ -36,15 +36,9 @@ function Workspace({ me, refresh }: { me: Me; refresh: () => void }): ReactNode 
   const linkable = useMemo(() => [...listing.pages, ...listing.missing].map((page) => page.name), [listing]);
   useEffect(() => {
     let live = true;
-    // The same listing as before is kept as it was: nothing built from it is built again.
-    let last = "";
-    const read = (): void =>
-      void api<Listing>("/api/pages").then((all) => {
-        const now = JSON.stringify(all);
-        if (!live || now === last) return;
-        last = now;
-        setListing(all);
-      }, () => {});
+    // An unchanged listing is a 304: the one kept is kept as it was, and nothing built from it is built again.
+    const etag = { current: null as string | null };
+    const read = (): void => void poll<Listing>("/api/pages", etag).then((all) => live && all !== null && setListing(all), () => {});
     read();
     const timer = setInterval(read, 3000);
     return () => {
@@ -110,11 +104,16 @@ function Page({ name, me, linkable, written, onReauthenticated }: PageProps): Re
   // A reader opening a page nobody wrote: opening it would write it.
   const [unwritten, setUnwritten] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  // Asked again once the list has the page; refused again (a server that has
+  // not seen it yet), asked after twice as long each time, up to half a minute.
   useEffect(() => {
     if (!unwritten || !written) return;
-    setUnwritten(false);
-    setAttempt((count) => count + 1);
-  }, [unwritten, written]);
+    const timer = setTimeout(() => {
+      setUnwritten(false);
+      setAttempt((count) => count + 1);
+    }, 500 * 2 ** Math.min(attempt, 6));
+    return () => clearTimeout(timer);
+  }, [unwritten, written, attempt]);
   const [discussion, setDiscussion] = useState<Discussion | null>(null);
   const [tab, setTab] = useState<SideTab>("page");
 

@@ -27,6 +27,7 @@ interface Folder {
 function treeOf({ pages, missing }: Listing): Folder {
   const root: Folder = { entries: [], folders: new Map() };
   const entries: Entry[] = [...pages.map((page): Entry => ({ kind: "page", page })), ...missing.map((one): Entry => ({ kind: "missing", missing: one }))];
+  // In the reader's language, "a" beside "B": the API's code point order is for agreeing stores, not for reading.
   entries.sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
   for (const entry of entries) {
     const parts = nameOf(entry).split("/");

@@ -100,11 +100,16 @@ describe.each(stores)("the %s store", (_kind, make) => {
     ]);
   });
 
-  test("leave the hidden pages' links out of what is not written yet", async () => {
+  test("quarantine pages: kept out of every listing and of what is not written yet", async () => {
     const store = await make();
-    await store.save(page("../../evil", { links: ["home", "later"] }), new Uint8Array());
+    await store.save(page("../../evil", { links: ["later"] }), new Uint8Array([1]));
     await store.save(page("a", { links: ["later"] }), new Uint8Array());
-    expect(await store.missing(["../../evil"])).toEqual([{ name: "later", linkedFrom: ["a"], linkCount: 1 }]);
+    await store.quarantine(["../../evil", "never-stored"]);
+    expect(names(await store.list())).toEqual(["a"]);
+    expect(await store.get("../../evil")).toBeNull();
+    expect(await store.exists("../../evil")).toBe(false);
+    expect(await store.missing()).toEqual([{ name: "later", linkedFrom: ["a"], linkCount: 1 }]);
+    await store.quarantine([]);
   });
 
   test("finds pages by the start of their words, in names split at / _ . -", async () => {

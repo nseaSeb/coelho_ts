@@ -29,6 +29,19 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
   return data as T;
 }
 
+/**
+ * A GET polled with the ETag of what was last read: `null` when the server
+ * answers 304, nothing changed, and no body was sent.
+ */
+export async function poll<T>(path: string, etag: { current: string | null }): Promise<T | null> {
+  const response = await fetch(path, { headers: etag.current === null ? {} : { "if-none-match": etag.current }, cache: "no-store", credentials: "same-origin" });
+  if (response.status === 304) return null;
+  const data = (await response.json().catch(() => ({}))) as T & { error?: string };
+  if (!response.ok) throw new ApiError(data.error ?? `${response.status}`);
+  etag.current = response.headers.get("etag");
+  return data;
+}
+
 export async function currentUser(): Promise<Me | null> {
   try {
     return await api<Me>("/api/me");

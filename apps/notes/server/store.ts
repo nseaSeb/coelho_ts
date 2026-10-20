@@ -1,5 +1,6 @@
 import type { Document, ValidationError } from "@nseaprotector/coelho-core";
 import pg from "pg";
+import { isId } from "./ids.js";
 
 /** A page as it is stored: the Yjs state to resume from, and the validated document derived from it. */
 export interface StoredPage {
@@ -50,18 +51,16 @@ export interface Missing {
  * beyond U+FFFF before "Ａ". Both stores sort names this way.
  */
 export function byCodePoint(a: string, b: string): number {
-  const left = [...a];
-  const right = [...b];
-  for (let at = 0; at < Math.min(left.length, right.length); at += 1) {
-    const difference = (left[at] as string).codePointAt(0)! - (right[at] as string).codePointAt(0)!;
-    if (difference !== 0) return difference;
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < b.length) {
+    const x = a.codePointAt(i) as number;
+    const y = b.codePointAt(j) as number;
+    if (x !== y) return x - y;
+    i += x > 0xffff ? 2 : 1;
+    j += y > 0xffff ? 2 : 1;
   }
-  return left.length - right.length;
-}
-
-/** A row id: a bigint, up to 18 digits. Anything else is no row, never a query error. */
-export function isId(value: string): boolean {
-  return /^\d{1,18}$/.test(value);
+  return a.length - i - (b.length - j);
 }
 
 export interface DocumentStore {
@@ -75,9 +74,13 @@ export interface DocumentStore {
   /**
    * The pages linked to and not written yet, by name, each with how many
    * pages link to it and the first five of them, by name in code point order.
-   * Links from the pages named in `hidden` are not counted.
    */
-  missing(hidden?: string[]): Promise<Missing[]>;
+  missing(): Promise<Missing[]>;
+  /**
+   * Moves the pages named out of the way: kept, in a table of their own,
+   * and served by nothing. For names stored before every name was checked.
+   */
+  quarantine(names: string[]): Promise<void>;
   /** The pages that link to this one. */
   backlinks(name: string): Promise<Array<Pick<StoredPage, "name" | "updatedAt">>>;
   /** Every page with its body, for an export. */
@@ -109,6 +112,7 @@ export interface DocumentStore {
 /** For tests and for running without a database: nothing survives a restart. */
 export function memoryStore(): DocumentStore {
   const rows = new Map<string, { page: StoredPage; state: Uint8Array }>();
+  const quarantined = new Map<string, { page: StoredPage; state: Uint8Array }>();
   const history: PageVersion[] = [];
   const discussions = new Map<string, { state: Uint8Array; threads: unknown[] }>();
   let nextVersion = 1;
@@ -157,10 +161,17 @@ export function memoryStore(): DocumentStore {
     get: async (name) => rows.get(name)?.page ?? null,
     list: async () =>
       [...rows.values()].map(({ page }) => ({ name: page.name, hash: page.hash, updatedBy: page.updatedBy, updatedAt: page.updatedAt })).sort((a, b) => byCodePoint(a.name, b.name)),
-    missing: async (hidden = []) => {
+    quarantine: async (names) => {
+      for (const name of names) {
+        const row = rows.get(name);
+        if (row === undefined) continue;
+        quarantined.set(name, row);
+        rows.delete(name);
+      }
+    },
+    missing: async () => {
       const linking = new Map<string, string[]>();
       for (const { page } of rows.values()) {
-        if (hidden.includes(page.name)) continue;
         for (const link of page.links) {
           if (rows.has(link)) continue;
           let from = linking.get(link);
@@ -221,6 +232,20 @@ create table if not exists page_versions (
   updated_at timestamptz not null default now()
 );
 create index if not exists page_versions_name on page_versions (name, id desc);
+-- Pages stored under a name that is not a page's, before every name was
+-- checked: kept here, served by nothing.
+create table if not exists pages_quarantine (
+  name           text not null,
+  state          bytea not null,
+  body           jsonb not null,
+  hash           text,
+  text           text not null,
+  errors         jsonb not null,
+  updated_by     text,
+  links          text[] not null,
+  updated_at     timestamptz not null,
+  quarantined_at timestamptz not null default now()
+);
 create table if not exists page_threads (
   name       text primary key,
   state      bytea not null,
@@ -268,13 +293,31 @@ export async function postgresStore(pool: pg.Pool): Promise<DocumentStore> {
       const result = await pool.query('select name, hash, updated_by, updated_at from pages order by name collate "C"');
       return result.rows.map((r) => ({ name: r.name as string, hash: (r.hash as string | null) ?? null, updatedBy: (r.updated_by as string | null) ?? null, updatedAt: (r.updated_at as Date).toISOString() }));
     },
-    missing: async (hidden = []) => {
+    quarantine: async (names) => {
+      if (names.length === 0) return;
+      const client = await pool.connect();
+      try {
+        await client.query("begin");
+        await client.query(
+          `insert into pages_quarantine (name, state, body, hash, text, errors, updated_by, links, updated_at)
+           select name, state, body, hash, text, errors, updated_by, links, updated_at from pages where name = any($1::text[])`,
+          [names],
+        );
+        await client.query("delete from pages where name = any($1::text[])", [names]);
+        await client.query("commit");
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+    missing: async () => {
       const result = await pool.query(
         `select link as name, (array_agg(p.name order by p.name collate "C"))[1:5] as linked_from, count(*)::int as link_count
          from pages p cross join lateral unnest(p.links) as link
-         where not exists (select 1 from pages q where q.name = link) and p.name <> all($1::text[])
+         where not exists (select 1 from pages q where q.name = link)
          group by link order by link collate "C"`,
-        [hidden],
       );
       return result.rows.map((r) => ({ name: r.name as string, linkedFrom: r.linked_from as string[], linkCount: r.link_count as number }));
     },
