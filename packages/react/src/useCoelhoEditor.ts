@@ -1,5 +1,5 @@
 import type { Node as CoelhoNode, Schema as CoelhoSchema, ValidationError } from "@coelho/core";
-import { coelhoPlugins, toProseMirrorDoc, toProseMirrorSchema } from "@coelho/prosemirror";
+import { coelhoPlugins, proseMirrorSchemaFor, toProseMirrorDoc } from "@coelho/prosemirror";
 import type { Node, Schema } from "prosemirror-model";
 import { EditorState, type Plugin, type Transaction } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
@@ -36,6 +36,18 @@ export interface UseCoelhoEditorOptions {
    */
   plugins?: Plugin[] | undefined;
   /**
+   * ProseMirror's undo history; on by default. Off for collaborative
+   * editing, where undo comes from the CRDT and is the writer's own.
+   */
+  history?: boolean | undefined;
+  /**
+   * Called every time the view is built — twice under StrictMode — for
+   * what must be fresh per view: a collaboration binding cannot outlive the
+   * view it was attached to. It may give the first document, which then
+   * replaces `value`, and plugins, placed before everything else.
+   */
+  setup?: ((pmSchema: Schema) => { doc?: Node; plugins?: Plugin[] }) | undefined;
+  /**
    * React components drawing leaf nodes in the editor, by node name. The
    * page still renders those nodes from the schema; this is how the editor
    * shows them. Read once, when the editor is built.
@@ -65,11 +77,15 @@ export function useCoelhoEditor(options: UseCoelhoEditorOptions): CoelhoEditor {
   const { schema, value, onChange, onInvalid } = options;
   const pluginsRef = useRef(options.plugins);
   pluginsRef.current = options.plugins;
+  const setupRef = useRef(options.setup);
+  setupRef.current = options.setup;
+  const historyRef = useRef(options.history);
+  historyRef.current = options.history;
   const nodeViewsRef = useRef(options.nodeViews);
   nodeViewsRef.current = options.nodeViews;
   const [store] = useState(() => new NodeViewStore());
   const entries = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
-  const pmSchema = useMemo(() => toProseMirrorSchema(schema), [schema]);
+  const pmSchema = useMemo(() => proseMirrorSchemaFor(schema), [schema]);
   const viewRef = useRef<EditorView | null>(null);
   const listeners = useRef(new Set<() => void>());
   const onChangeRef = useRef(onChange);
@@ -118,9 +134,12 @@ export function useCoelhoEditor(options: UseCoelhoEditorOptions): CoelhoEditor {
         viewRef.current = null;
         return;
       }
-      const dispatchTransaction = (tr: Transaction): void => {
+      // A transaction from a view that is no longer this hook's — destroyed
+      // by StrictMode's double mount, or replaced for a new schema — is
+      // dropped: it was built on that view's state, not the current one's.
+      const dispatchTransaction = function (this: EditorView, tr: Transaction): void {
         const view = viewRef.current;
-        if (view === null) return;
+        if (view === null || this !== view) return;
         view.updateState(view.state.apply(tr));
         for (const listener of listeners.current) listener();
         if (tr.docChanged) {
@@ -129,11 +148,15 @@ export function useCoelhoEditor(options: UseCoelhoEditorOptions): CoelhoEditor {
           onChangeRef.current?.(json);
         }
       };
-      const doc = load(valueRef.current) ?? (pmSchema.topNodeType.createAndFill() as Node);
+      const fresh = setupRef.current?.(pmSchema) ?? {};
+      const doc = fresh.doc ?? load(valueRef.current) ?? (pmSchema.topNodeType.createAndFill() as Node);
       viewRef.current = new EditorView(element, {
         // The application's plugins come first, so one that handles a key
         // (a suggestion list taking Enter) is asked before the keymap.
-        state: EditorState.create({ doc, plugins: [...(pluginsRef.current ?? []), ...coelhoPlugins(pmSchema)] }),
+        state: EditorState.create({
+          doc,
+          plugins: [...(fresh.plugins ?? []), ...(pluginsRef.current ?? []), ...coelhoPlugins(pmSchema, { history: historyRef.current ?? true })],
+        }),
         nodeViews: store.constructors(nodeViewsRef.current ?? {}),
         dispatchTransaction,
       });

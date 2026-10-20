@@ -14,12 +14,17 @@ import type { Command, Plugin } from "prosemirror-state";
  * `> ` and triple backticks into blocks. Every rule is guarded by the
  * schema: a schema without headings gets no heading rule.
  */
-export function coelhoPlugins(schema: Schema): Plugin[] {
-  const keys: Record<string, (typeof baseKeymap)[string]> = {
-    "Mod-z": undo,
-    "Shift-Mod-z": redo,
-    "Mod-y": redo,
-  };
+export interface CoelhoPluginOptions {
+  /**
+   * ProseMirror's own undo history, on by default. Off for collaborative
+   * editing, where undo has to be the writer's own and comes from the CRDT.
+   */
+  history?: boolean;
+}
+
+export function coelhoPlugins(schema: Schema, options: CoelhoPluginOptions = {}): Plugin[] {
+  const withHistory = options.history ?? true;
+  const keys: Record<string, (typeof baseKeymap)[string]> = withHistory ? { "Mod-z": undo, "Shift-Mod-z": redo, "Mod-y": redo } : {};
   const mark = (name: string, key: string): void => {
     const type = schema.marks[name];
     if (type !== undefined) keys[key] = toggleMark(type);
@@ -49,7 +54,7 @@ export function coelhoPlugins(schema: Schema): Plugin[] {
   if (schema.nodes.blockquote !== undefined) rules.push(wrappingInputRule(/^\s*>\s$/, schema.nodes.blockquote));
   if (schema.nodes.code_block !== undefined) rules.push(textblockTypeInputRule(/^```$/, schema.nodes.code_block));
 
-  return [inputRules({ rules }), keymap(keys), keymap(baseKeymap), history(), dropCursor(), gapCursor()];
+  return [inputRules({ rules }), keymap(keys), keymap(baseKeymap), ...(withHistory ? [history()] : []), dropCursor(), gapCursor()];
 }
 
 /**

@@ -9,4 +9,5 @@ export const workspaceAliases = {
   "@coelho/core": source("core"),
   "@coelho/prosemirror": source("prosemirror"),
   "@coelho/react": source("react"),
+  "@coelho/collab": source("collab"),
 };

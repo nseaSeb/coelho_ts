@@ -1,19 +1,8 @@
 import { sanitize, type Document, type Schema as CoelhoSchema } from "@coelho/core";
 import MarkdownIt from "markdown-it";
-import { DOMParser, Slice, type Fragment, type Schema } from "prosemirror-model";
+import { DOMParser, Slice, type Fragment } from "prosemirror-model";
 import { Plugin } from "prosemirror-state";
-import { toProseMirrorSchema } from "./schema.js";
-
-const schemas = new WeakMap<CoelhoSchema, Schema>();
-
-function pmSchemaFor(schema: CoelhoSchema): Schema {
-  let pm = schemas.get(schema);
-  if (pm === undefined) {
-    pm = toProseMirrorSchema(schema);
-    schemas.set(schema, pm);
-  }
-  return pm;
-}
+import { proseMirrorSchemaFor } from "./schema.js";
 
 /**
  * Parses HTML into an inert document: no script runs, no image loads, no
@@ -33,7 +22,7 @@ function inert(html: string): HTMLElement {
 export function fromHtml(html: string, schema: CoelhoSchema): Document {
   const body = inert(html);
   openRequiredFirst(body, schema);
-  const doc = DOMParser.fromSchema(pmSchemaFor(schema)).parse(body);
+  const doc = DOMParser.fromSchema(proseMirrorSchemaFor(schema)).parse(body);
   // Reading, not writing: the length bounds are not this import's to apply.
   return sanitize(doc.toJSON(), schema, { limits: { maxTextLength: Infinity, maxAttrLength: Infinity } });
 }

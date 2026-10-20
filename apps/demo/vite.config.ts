@@ -4,6 +4,8 @@ import { workspaceAliases } from "../../aliases.js";
 
 export default defineConfig({
   plugins: [react()],
-  resolve: { alias: workspaceAliases },
+  // One copy of yjs: two would break the instanceof checks it relies on,
+  // the one marking undo transactions among them.
+  resolve: { alias: workspaceAliases, dedupe: ["yjs"] },
   server: { port: 5180 },
 });

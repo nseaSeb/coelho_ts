@@ -34,6 +34,18 @@ export function toProseMirrorSchema(schema: CoelhoSchema): Schema {
   return new Schema({ topNode: schema.topNode, nodes, marks });
 }
 
+const cached = new WeakMap<CoelhoSchema, Schema>();
+
+/** `toProseMirrorSchema`, built once per coelho schema: two parts of one editor must share one ProseMirror schema. */
+export function proseMirrorSchemaFor(schema: CoelhoSchema): Schema {
+  let pm = cached.get(schema);
+  if (pm === undefined) {
+    pm = toProseMirrorSchema(schema);
+    cached.set(schema, pm);
+  }
+  return pm;
+}
+
 export type LoadResult = { ok: true; doc: Node; repaired?: ValidationError[] } | { ok: false; errors: ValidationError[] };
 
 export interface LoadOptions {

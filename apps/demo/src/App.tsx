@@ -1,5 +1,6 @@
 import { canonical, defaultSchema, escape, extendSchema, hash, isBlank, reanchor, sanitize, tag, textLength, toHtml, toMarkdown, toText, validate, type Node, type Thread } from "@coelho/core";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Collab } from "./Collab.js";
 import { CommentedEditor, type LiveThread } from "./Comments.js";
 
 // The default schema plus what an application adds: a mark with a class of
@@ -213,6 +214,7 @@ export function App(): ReactNode {
           <JsonInput value={value} onChange={setValue} />
         </Panel>
       </div>
+      <Collab schema={schema} />
     </main>
   );
 }

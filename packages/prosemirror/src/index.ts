@@ -1,5 +1,5 @@
-export { toProseMirrorSchema, toProseMirrorDoc, type LoadOptions, type LoadResult } from "./schema.js";
-export { coelhoPlugins, insertHardBreak, setBlockType, toggleMark, wrapIn, wrapInList } from "./plugins.js";
+export { toProseMirrorSchema, proseMirrorSchemaFor, toProseMirrorDoc, type LoadOptions, type LoadResult } from "./schema.js";
+export { coelhoPlugins, insertHardBreak, type CoelhoPluginOptions, setBlockType, toggleMark, wrapIn, wrapInList } from "./plugins.js";
 export {
   addComment,
   commentsPlugin,

@@ -8,8 +8,25 @@
     "composite": false,
     "declaration": false,
     "declarationMap": false,
-    "types": ["vite/client"]
+    "types": [
+      "vite/client"
+    ]
   },
-  "include": ["src"],
-  "references": [{ "path": "../../packages/core" }, { "path": "../../packages/prosemirror" }, { "path": "../../packages/react" }]
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../packages/core"
+    },
+    {
+      "path": "../../packages/prosemirror"
+    },
+    {
+      "path": "../../packages/react"
+    },
+    {
+      "path": "../../packages/collab"
+    }
+  ]
 }
