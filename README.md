@@ -407,8 +407,14 @@ cd ../coelho && MIX_ENV=test mix run ../coelho_ts/scripts/sanitize-parity/compar
 
 ```
 pnpm install
-pnpm check     # typecheck, lint, test
+pnpm check     # typecheck, lint, unit and jsdom tests
+pnpm e2e       # Playwright, in Chromium: the demo and coelho notes in a real browser
 ```
+
+The end-to-end tests check what jsdom cannot: the `@` list placed under
+the caret, copy and paste through the real clipboard, two writers in one
+page, and two browsers signed in to the notes server (roles applied live,
+`[[links]]` followed, backlinks). They run on every push.
 
 Node 20+, pnpm 10.
 
