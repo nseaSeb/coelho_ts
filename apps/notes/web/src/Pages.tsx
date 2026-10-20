@@ -1,5 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { isPageName } from "../../server/schema.js";
+import type { Me } from "./api.js";
+import { Search, Vault } from "./Vault.js";
 
 export interface PageSummary {
   name: string;
@@ -51,7 +53,7 @@ function Branch({ folder, current }: { folder: Folder; current: string }): React
   );
 }
 
-export function Sidebar({ pages, current }: { pages: PageSummary[]; current: string }): ReactNode {
+export function Sidebar({ pages, current, me }: { pages: PageSummary[]; current: string; me: Me }): ReactNode {
   const [draft, setDraft] = useState("");
   const valid = isPageName(draft);
   const create = (event: FormEvent): void => {
@@ -63,6 +65,7 @@ export function Sidebar({ pages, current }: { pages: PageSummary[]; current: str
   };
   return (
     <nav className="sidebar" aria-label="Pages">
+      <Search />
       <h2>Pages</h2>
       <Branch folder={treeOf(pages)} current={current} />
       <form onSubmit={create}>
@@ -72,6 +75,7 @@ export function Sidebar({ pages, current }: { pages: PageSummary[]; current: str
         </button>
       </form>
       {draft !== "" && !valid ? <p className="small muted">Letters, digits, - _ . and / for folders.</p> : null}
+      <Vault me={me} pages={pages} />
     </nav>
   );
 }

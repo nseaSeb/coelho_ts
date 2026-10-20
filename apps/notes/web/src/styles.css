@@ -98,3 +98,18 @@ button.primary:disabled { opacity: 0.5; }
 .suggestion { display: block; padding: 6px 8px; border-radius: 5px; font-size: 13px; }
 .suggestion.active { background: var(--code); }
 .suggestion em { color: var(--muted); }
+
+/* Search and vault */
+.search { margin-bottom: 12px; }
+.search input { width: 100%; font: inherit; font-size: 13px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
+.search ul { list-style: none; padding: 0; margin: 6px 0 0; font-size: 13px; }
+.search li { padding: 4px 0; border-bottom: 1px solid var(--line); }
+.search .snippet { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+.search mark { background: rgba(255, 200, 60, 0.45); color: inherit; border-radius: 2px; }
+.vault { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); display: grid; gap: 6px; }
+.vault h2 { margin: 0; }
+.vault .button { display: block; text-align: center; font-size: 13px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); text-decoration: none; cursor: pointer; }
+.vault .button:hover { border-color: var(--accent); }
+.vault .pending { display: grid; gap: 6px; }
+.vault .pending button { font: inherit; font-size: 13px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+.vault .pending button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }

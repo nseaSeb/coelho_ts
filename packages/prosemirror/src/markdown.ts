@@ -78,11 +78,52 @@ markdownIt.renderer.renderInlineAsText = function renderInlineAsText(tokens: Inl
   return text;
 } as typeof markdownIt.renderer.renderInlineAsText;
 
-function markdownToHtml(markdown: string): string {
+/**
+ * Obsidian's `[[page]]` and `[[page|alias]]`, read as a node of the
+ * schema's own when `fromMarkdown` is asked to: the node goes through the
+ * import like any other, held to its attributes' validators. Not inside
+ * code, and not when the brackets are escaped.
+ */
+export interface WikiLinks {
+  /** The inline node a link becomes, such as `page_link`. */
+  node: string;
+  /** The attribute that holds the link's target. */
+  attr: string;
+  /** Turns a target as written into the one stored, as a vault's file names become page names. */
+  resolve?: (target: string) => string;
+}
+
+interface Env {
+  wikiLinks?: WikiLinks;
+}
+
+markdownIt.inline.ruler.before("link", "coelho_wikilink", (state, silent) => {
+  const wikiLinks = (state.env as Env).wikiLinks;
+  if (wikiLinks === undefined || state.src.charCodeAt(state.pos) !== 0x5b || state.src.charCodeAt(state.pos + 1) !== 0x5b) return false;
+  const end = state.src.indexOf("]]", state.pos + 2);
+  if (end === -1) return false;
+  const inner = state.src.slice(state.pos + 2, end);
+  if (inner.includes("\n") || inner.includes("[")) return false;
+  const written = (inner.split("|")[0] ?? "").trim();
+  const target = written === "" ? "" : (wikiLinks.resolve?.(written) ?? written);
+  if (target === "") return false;
+  if (!silent) {
+    const attrs = JSON.stringify({ [wikiLinks.attr]: target }).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+    const token = state.push("html_inline", "", 0);
+    // The link's own words inside: a leaf node ignores them, and a link the
+    // schema refuses leaves them as text rather than losing them.
+    const words = state.src.slice(state.pos, end + 2).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    token.content = `<span data-coelho="${wikiLinks.node.replace(/[^\w-]/g, "")}" data-coelho-attrs="${attrs}">${words}</span>`;
+  }
+  state.pos = end + 2;
+  return true;
+});
+
+function markdownToHtml(markdown: string, env: Env = {}): string {
   // A hard line break's newline would read as a space at the start of the
   // next line, and a fenced block's content always ends with a newline
   // that is the fence's, not the code's.
-  return markdownIt.render(markdown).replaceAll("<br>\n", "<br>").replace(/\n<\/code><\/pre>/g, "</code></pre>");
+  return markdownIt.render(markdown, env).replaceAll("<br>\n", "<br>").replace(/\n<\/code><\/pre>/g, "</code></pre>");
 }
 
 /**
@@ -90,8 +131,8 @@ function markdownToHtml(markdown: string): string {
  * exactly as it does for imported HTML. The inverse of `toMarkdown` from
  * `@nseaprotector/coelho-core`, up to what Markdown cannot say.
  */
-export function fromMarkdown(markdown: string, schema: CoelhoSchema): Document {
-  return fromHtml(markdownToHtml(markdown), schema);
+export function fromMarkdown(markdown: string, schema: CoelhoSchema, options: { wikiLinks?: WikiLinks } = {}): Document {
+  return fromHtml(markdownToHtml(markdown, options.wikiLinks === undefined ? {} : { wikiLinks: options.wikiLinks }), schema);
 }
 
 /**

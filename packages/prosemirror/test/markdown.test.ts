@@ -280,6 +280,25 @@ describe("fromMarkdown", () => {
     expect(toHtml(document, schema)).toBe("<h1>Hi</h1><p><strong>bold</strong> x</p>");
   });
 
+  test("reads Obsidian links as a node of the schema, when asked, and nowhere it should not", () => {
+    const linked = extendSchema(defaultSchema(), {
+      nodes: { page_link: { group: "inline", inline: true, void: true, attrs: { name: { required: true, validate: (v) => (typeof v === "string" && /^[a-z/-]+$/.test(v) ? null : "a page name") } } } },
+    });
+    const wikiLinks = { node: "page_link", attr: "name" };
+    const document = fromMarkdown("See [[cinemas/lyon]] and [[siege|the siege]], not `[[code]]`, not \\[\\[escaped\\]\\], not [[Bad Name]].", linked, { wikiLinks });
+    const inline = document.content?.[0]?.content ?? [];
+    expect(inline.filter((node) => node.type === "page_link").map((node) => node.attrs?.name)).toEqual(["cinemas/lyon", "siege"]);
+    expect(toText(document, linked)).toContain("[[code]]");
+    expect(toText(document, linked)).toContain("[[escaped]]");
+    // A link the schema refuses keeps its words.
+    expect(toText(document, linked)).toContain("not [[Bad Name]].");
+    // A resolver maps targets as written to names, as a vault's files become pages.
+    const resolved = fromMarkdown("[[Cinémas/Lyon Part-Dieu]]", linked, { wikiLinks: { ...wikiLinks, resolve: (t) => t.toLowerCase().replace(/ /g, "-").replace("é", "e") } });
+    expect(resolved.content?.[0]?.content?.[0]).toEqual({ type: "page_link", attrs: { name: "cinemas/lyon-part-dieu" } });
+    // Without the option, brackets are text.
+    expect(JSON.stringify(fromMarkdown("[[cinemas/lyon]]", linked))).not.toContain("page_link");
+  });
+
   test("keeps straight quotes, as they were typed", () => {
     expect(toText(fromMarkdown(`He said "it's fine"`, schema), schema)).toContain(`He said "it's fine"`);
   });

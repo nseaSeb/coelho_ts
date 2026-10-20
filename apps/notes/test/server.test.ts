@@ -2,6 +2,10 @@ import { FIELD, snapshot } from "@nseaprotector/coelho-collab";
 import { hash, toHtml } from "@nseaprotector/coelho-core";
 import { HocuspocusProvider, HocuspocusProviderWebsocket } from "@hocuspocus/provider";
 import type { Server } from "@hocuspocus/server";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import * as Y from "yjs";
 import { memoryAccounts } from "../server/accounts.js";
@@ -265,6 +269,62 @@ describe("links between pages", () => {
   test("a room whose name is not a page name is refused", async () => {
     const { url, http } = await start();
     await expect(open(url, "../etc/passwd", await signUp(http, "Camille"))).rejects.toThrow(/refused/);
+  });
+});
+
+describe("the vault", () => {
+  test("exports every page as Markdown, in folders, with links as Obsidian writes them", async () => {
+    const { url, http, store } = await start();
+    const cookie = await signUp(http, "Camille");
+    const page = await open(url, "siege/semaine-42", cookie);
+    firstText(page).insert(0, "Programme **gras** ");
+    link(page, "cinemas/lyon");
+    await until(async () => ((await store.get("siege/semaine-42"))?.links.length ?? 0) > 0);
+    const response = await call(http, "/api/export", { cookie });
+    expect(response.headers.get("content-type")).toBe("application/zip");
+    // Read back with the system's unzip: the archive is a real ZIP.
+    const dir = mkdtempSync(join(tmpdir(), "vault-"));
+    writeFileSync(join(dir, "vault.zip"), Buffer.from(await response.arrayBuffer()));
+    expect(execFileSync("unzip", ["-Z1", join(dir, "vault.zip")], { encoding: "utf8" }).trim().split("\n")).toEqual(["siege/semaine-42.md"]);
+    const markdown = execFileSync("unzip", ["-p", join(dir, "vault.zip"), "siege/semaine-42.md"], { encoding: "utf8" });
+    expect(markdown).toBe("# siege/semaine-42\n\nProgramme \\*\\*gras\\*\\* Everyone with this page open edits it together. Type `[[` to link another page.[[cinemas/lyon]]\n");
+  });
+
+  test("imports pages an editor read from Markdown, revalidated, live for whoever has them open", async () => {
+    const { url, http, store } = await start();
+    const admin = await signUp(http, "Camille");
+    const reader = await signUp(http, "Sacha");
+    const watching = await open(url, "imported", admin);
+    const pages = [
+      { name: "imported", document: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "From the vault." }, { type: "page_link", attrs: { name: "other" } }] }] } },
+      { name: "hostile", document: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "kept", marks: [{ type: "link", attrs: { href: "javascript:x" } }] }] }] } },
+      { name: "../nope", document: { type: "doc", content: [{ type: "paragraph" }] } },
+    ];
+    expect((await call(http, "/api/import", { body: { pages }, cookie: reader })).status).toBe(403);
+    const result = (await (await call(http, "/api/import", { body: { pages }, cookie: admin })).json()) as Record<string, string[]>;
+    expect(result).toEqual({ imported: ["imported", "hostile"], repaired: ["hostile"], refused: ["../nope"] });
+    // The page open in an editor changed under it, and was stored under who imported it.
+    await until(() => textOf(watching).includes("From the vault."));
+    expect(watching.document.getXmlFragment(FIELD).length).toBe(1);
+    await until(async () => (await store.get("imported"))?.links.includes("other") ?? false);
+    expect((await store.get("imported"))?.updatedBy).toBe("Camille");
+    await until(async () => (await store.get("hostile"))?.text === "kept");
+    expect(JSON.stringify((await store.get("hostile"))?.body)).not.toContain("javascript");
+  });
+
+  test("is searched by words, each the start of a word, and snippets are text, not HTML", async () => {
+    const { url, http, store } = await start();
+    const cookie = await signUp(http, "Camille");
+    const page = await open(url, "lyon", cookie);
+    firstText(page).insert(0, "Projection <script>alert(1)</script> de Dune à Lyon. ");
+    await until(async () => (await store.get("lyon"))?.text.includes("Projection") ?? false);
+    const search = async (q: string): Promise<Array<{ name: string; snippet: string }>> => (await call(http, `/api/search?q=${encodeURIComponent(q)}`, { cookie })).json() as never;
+    expect((await search("proj dun")).map((hit) => hit.name)).toEqual(["lyon"]);
+    expect(await search("nantes")).toEqual([]);
+    expect(await search("&|!:*()")).toEqual([]);
+    const [hit] = await search("dune");
+    expect(hit?.snippet).toContain("\u0001Dune\u0002");
+    expect(hit?.snippet).toContain("<script>");
   });
 });
 

@@ -148,6 +148,17 @@ opens another page.
   when it stores it (a `text[]` column with a GIN index), and
   `GET /api/pages/:name/backlinks` answers who links to a page. A `/` in a
   name is a folder: `siege/semaine-42` sits in `siege`.
+- **The vault goes out and comes back.** `GET /api/export` is a ZIP of
+  Markdown files, one per page, in their folders, links written as
+  Obsidian writes them (built with what Node ships: deflate and crc32).
+  Import takes `.md` files or a vault folder: the browser reads them with
+  `fromMarkdown`, Obsidian's `[[links]]` included and file names made page
+  names; the server revalidates each page and writes it into its room
+  through its own connection, so whoever has it open sees it change. A
+  page exported and imported again stores the same hash.
+- **Search** as you type, every word a prefix, over a generated `tsvector`
+  with a GIN index; matches come back marked with control characters, not
+  HTML, since the text is the writers'.
 - HTTP and WebSockets share one port: `GET /api/pages` and
   `GET /api/pages/:name` return what is stored; the side panel of the app
   shows it, read back from the server.
@@ -208,7 +219,7 @@ read them as delimiters and as `<strong>`, `<em>`, `<del>` otherwise, and
 what Markdown cannot say (a cell holding a list, a heading holding a line
 break) is written as HTML. Your own nodes and marks take overrides.
 
-`fromMarkdown` and `fromHtml` (in `@nseaprotector/coelho-prosemirror`, they need a DOM)
+`fromMarkdown` and `fromHtml` (in `@nseaprotector/coelho-prosemirror`, they need a DOM; `fromMarkdown` reads Obsidian's `[[links]]` into a node of your schema with `wikiLinks`)
 go the other way through the schema's own parse rules, on an inert
 document: nothing in the HTML runs or loads. `markdownPaste(schema)` makes
 pasted plain text arrive formatted. Text that says nothing in Markdown is
@@ -403,7 +414,8 @@ under StrictMode), React node views, suggestions, anchored comments.
 2. Node views with editable content (only leaf nodes today).
 3. Comments: render threads on the page (`toHtml` with highlights),
    mentions in comment bodies.
-4. coelho notes: a Markdown vault export and import, and search.
+4. coelho notes: unresolved links (pages linked to and never opened),
+   and comment threads on pages.
 
 ## License
 

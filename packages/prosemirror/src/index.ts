@@ -24,5 +24,5 @@ export {
   type SuggestionKeys,
   type SuggestionMatch,
 } from "./suggestion.js";
-export { fromHtml, fromMarkdown, markdownPaste } from "./markdown.js";
+export { fromHtml, fromMarkdown, markdownPaste, type WikiLinks } from "./markdown.js";
 export { createEditor, type CoelhoEditor, type CreateEditorOptions } from "./createEditor.js";

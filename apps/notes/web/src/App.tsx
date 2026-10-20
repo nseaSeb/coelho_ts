@@ -69,7 +69,7 @@ function Workspace({ me, refresh }: { me: Me; refresh: () => void }): ReactNode 
       {showPeople ? <People me={me} onClose={() => setShowPeople(false)} /> : null}
       {/* A new page or a new role is a new room: everything below is rebuilt. */}
       <div className="frame">
-        <Sidebar pages={pages} current={name} />
+        <Sidebar pages={pages} current={name} me={me} />
         {isPageName(name) ? (
           <Page key={`${name}:${me.role}`} name={name} me={me} pages={pages} onReauthenticated={refresh} />
         ) : (

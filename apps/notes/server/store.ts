@@ -27,6 +27,14 @@ export interface DocumentStore {
   list(): Promise<Array<Pick<StoredPage, "name" | "hash" | "updatedBy" | "updatedAt">>>;
   /** The pages that link to this one. */
   backlinks(name: string): Promise<Array<Pick<StoredPage, "name" | "updatedAt">>>;
+  /** Every page with its body, for an export. */
+  all(): Promise<StoredPage[]>;
+  /**
+   * Pages whose name or text holds every word of `query`, each word read as
+   * the start of a word. A snippet marks matches between \u0001 and \u0002,
+   * never as HTML: the text is the writers', and is rendered as text.
+   */
+  search(query: string): Promise<Array<{ name: string; snippet: string }>>;
   close(): Promise<void>;
 }
 
@@ -41,6 +49,19 @@ export function memoryStore(): DocumentStore {
       [...rows.values()].map(({ page }) => ({ name: page.name, hash: page.hash, updatedBy: page.updatedBy, updatedAt: page.updatedAt })).sort((a, b) => a.name.localeCompare(b.name)),
     backlinks: async (name) =>
       [...rows.values()].filter(({ page }) => page.links.includes(name)).map(({ page }) => ({ name: page.name, updatedAt: page.updatedAt })).sort((a, b) => a.name.localeCompare(b.name)),
+    all: async () => [...rows.values()].map(({ page }) => page),
+    search: async (query) => {
+      const words = wordsOf(query).map((word) => word.toLowerCase());
+      if (words.length === 0) return [];
+      const found: Array<{ name: string; snippet: string }> = [];
+      for (const { page } of rows.values()) {
+        const haystack = `${page.name} ${page.text}`.toLowerCase();
+        const tokens = haystack.split(/[^\p{L}\p{N}]+/u);
+        if (!words.every((word) => tokens.some((token) => token.startsWith(word)))) continue;
+        found.push({ name: page.name, snippet: snippetOf(page.text, words) });
+      }
+      return found.sort((a, b) => a.name.localeCompare(b.name));
+    },
     close: async () => {},
   };
 }
@@ -57,7 +78,13 @@ create table if not exists pages (
 );
 alter table pages add column if not exists updated_by text;
 alter table pages add column if not exists links text[] not null default '{}';
-create index if not exists pages_links on pages using gin (links);`;
+create index if not exists pages_links on pages using gin (links);
+-- Postgres reads "siege/semaine-42" as one path-like word, so "sema" would
+-- not find it: separators become spaces before the words are indexed.
+alter table pages drop column if exists search;
+alter table pages add column if not exists search_words tsvector
+  generated always as (to_tsvector('simple', regexp_replace(name || ' ' || text, '[/_.-]', ' ', 'g'))) stored;
+create index if not exists pages_search_words on pages using gin (search_words);`;
 
 /**
  * Pages in Postgres. The Yjs state is what the room resumes from; the body
@@ -102,6 +129,37 @@ export async function postgresStore(pool: pg.Pool): Promise<DocumentStore> {
       const result = await pool.query("select name, updated_at from pages where $1 = any(links) order by name", [name]);
       return result.rows.map((r) => ({ name: r.name as string, updatedAt: (r.updated_at as Date).toISOString() }));
     },
+    all: async () => {
+      const result = await pool.query("select name, body, hash, text, errors, updated_by, links, updated_at from pages order by name");
+      return result.rows.map(row);
+    },
+    search: async (query) => {
+      const words = wordsOf(query);
+      if (words.length === 0) return [];
+      // Words only, each a prefix: the query is built from letters and
+      // digits, so nothing a writer types is read as tsquery syntax.
+      const tsquery = words.map((word) => `${word}:*`).join(" & ");
+      const result = await pool.query(
+        `select name, ts_headline('simple', text, to_tsquery('simple', $1), 'StartSel=' || chr(1) || ', StopSel=' || chr(2) || ', MaxWords=18, MinWords=6') as snippet
+         from pages where search_words @@ to_tsquery('simple', $1) order by ts_rank(search_words, to_tsquery('simple', $1)) desc, name limit 30`,
+        [tsquery],
+      );
+      return result.rows.map((r) => ({ name: r.name as string, snippet: r.snippet as string }));
+    },
     close: async () => {},
   };
+}
+
+/** Up to eight words of letters and digits: what a search is made of. */
+function wordsOf(query: string): string[] {
+  return (query.match(/[\p{L}\p{N}]+/gu) ?? []).slice(0, 8);
+}
+
+/** Some words around the first match, matches marked as the Postgres store marks them. */
+function snippetOf(text: string, words: string[]): string {
+  const flat = text.replace(/\s+/g, " ");
+  const lower = flat.toLowerCase();
+  const at = Math.max(0, Math.min(...words.map((word) => lower.indexOf(word)).filter((index) => index >= 0)));
+  const piece = flat.slice(Math.max(0, at - 40), at + 80);
+  return piece.replace(new RegExp(`(?<![\\p{L}\\p{N}])(${words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})[\\p{L}\\p{N}]*`, "giu"), (match) => `\u0001${match}\u0002`);
 }
