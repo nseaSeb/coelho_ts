@@ -617,6 +617,13 @@ describe("comment threads", () => {
     expect((await call(http, "/api/import", { body: { pages: [] } })).status).toBe(401);
   });
 
+  test("the list of pages says what each links to", async () => {
+    const store = memoryStore();
+    await store.save({ name: "home", body: { type: "doc", content: [{ type: "paragraph", content: [{ type: "page_link", attrs: { name: "later" } }] }] }, hash: null, text: "", errors: [], updatedBy: null, links: ["later"] }, new Uint8Array());
+    const { http } = await start(store);
+    expect(await (await call(http, "/api/pages", { cookie: await signUp(http, "Ada") })).json()).toMatchObject([{ name: "home", links: ["later"] }]);
+  });
+
   test("an export leaves out a stored name that is not a page's", async () => {
     const store = memoryStore();
     await store.save({ name: "../../evil", body: { type: "doc", content: [{ type: "paragraph" }] }, hash: null, text: "", errors: [], updatedBy: null, links: [] }, new Uint8Array());

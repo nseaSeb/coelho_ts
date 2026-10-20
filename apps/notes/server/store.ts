@@ -41,7 +41,8 @@ export interface DocumentStore {
   load(name: string): Promise<Uint8Array | null>;
   save(page: Omit<StoredPage, "updatedAt">, state: Uint8Array): Promise<void>;
   get(name: string): Promise<StoredPage | null>;
-  list(): Promise<Array<Pick<StoredPage, "name" | "hash" | "updatedBy" | "updatedAt">>>;
+  /** Every page, with the pages it links to: a link to none is a page not written yet. */
+  list(): Promise<Array<Pick<StoredPage, "name" | "hash" | "updatedBy" | "updatedAt" | "links">>>;
   /** The pages that link to this one. */
   backlinks(name: string): Promise<Array<Pick<StoredPage, "name" | "updatedAt">>>;
   /** Every page with its body, for an export. */
@@ -114,7 +115,7 @@ export function memoryStore(): DocumentStore {
     save: async (page, state) => void rows.set(page.name, { page: { ...page, updatedAt: new Date().toISOString() }, state }),
     get: async (name) => rows.get(name)?.page ?? null,
     list: async () =>
-      [...rows.values()].map(({ page }) => ({ name: page.name, hash: page.hash, updatedBy: page.updatedBy, updatedAt: page.updatedAt })).sort((a, b) => a.name.localeCompare(b.name)),
+      [...rows.values()].map(({ page }) => ({ name: page.name, hash: page.hash, updatedBy: page.updatedBy, updatedAt: page.updatedAt, links: page.links })).sort((a, b) => a.name.localeCompare(b.name)),
     backlinks: async (name) =>
       [...rows.values()].filter(({ page }) => page.links.includes(name)).map(({ page }) => ({ name: page.name, updatedAt: page.updatedAt })).sort((a, b) => a.name.localeCompare(b.name)),
     all: async () => [...rows.values()].map(({ page }) => page),
@@ -207,8 +208,14 @@ export async function postgresStore(pool: pg.Pool): Promise<DocumentStore> {
       return result.rows[0] === undefined ? null : row(result.rows[0]);
     },
     list: async () => {
-      const result = await pool.query("select name, hash, updated_by, updated_at from pages order by name");
-      return result.rows.map((r) => ({ name: r.name as string, hash: (r.hash as string | null) ?? null, updatedBy: (r.updated_by as string | null) ?? null, updatedAt: (r.updated_at as Date).toISOString() }));
+      const result = await pool.query("select name, hash, updated_by, links, updated_at from pages order by name");
+      return result.rows.map((r) => ({
+        name: r.name as string,
+        hash: (r.hash as string | null) ?? null,
+        updatedBy: (r.updated_by as string | null) ?? null,
+        links: (r.links as string[] | null) ?? [],
+        updatedAt: (r.updated_at as Date).toISOString(),
+      }));
     },
     backlinks: async (name) => {
       const result = await pool.query("select name, updated_at from pages where $1 = any(links) order by name", [name]);

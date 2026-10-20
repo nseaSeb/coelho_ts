@@ -83,6 +83,7 @@ button.primary:disabled { opacity: 0.5; }
 .sidebar a { color: var(--ink); text-decoration: none; border-radius: 4px; padding: 1px 4px; display: inline-block; }
 .sidebar a:hover { background: var(--code); }
 .sidebar a[aria-current="page"] { background: var(--code); font-weight: 600; }
+.sidebar a.missing { color: var(--muted); font-style: italic; }
 .sidebar form { display: flex; gap: 4px; margin-top: 10px; }
 .sidebar input { min-width: 0; flex: 1; font: inherit; font-size: 13px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
 .sidebar input[aria-invalid="true"] { border-color: var(--accent); }

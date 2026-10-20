@@ -92,12 +92,16 @@ test("[[ links a page, the link opens it, and the new page knows who links to it
   await page.keyboard.press("Enter");
   const link = editor(page).locator("a.page-link", { hasText: name });
   await expect(link).toBeVisible();
+  // Linked to and not written yet: in the tree already, marked, until it is opened.
+  const inTree = page.getByRole("navigation", { name: "Pages" }).locator(`a[href="#${encodeURIComponent(name)}"]`);
+  await expect(inTree).toHaveClass("missing", { timeout: 10_000 });
 
   await link.click();
   await expect(page).toHaveURL(new RegExp(`#${encodeURIComponent(name)}$`));
   await expect(editor(page).locator("h1")).toHaveText(name);
   await expect(page.locator(".backlinks")).toContainText("welcome");
   await expect(page.getByRole("navigation", { name: "Pages" })).toContainText(name.split("/")[1] as string);
+  await expect(inTree).not.toHaveClass("missing", { timeout: 10_000 });
 });
 
 test("a page's history: what a version changed, and bringing it back for everyone", async ({ browser }, testInfo) => {
