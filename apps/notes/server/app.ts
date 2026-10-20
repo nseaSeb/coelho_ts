@@ -10,7 +10,7 @@ import { commentSchema, firstPage, isPageName, linksOf, NOT_WRITTEN, roomOf, sch
 import { zip } from "./zip.js";
 import type { AccountStore, Role, User } from "./accounts.js";
 import { authRoutes, colorOf, userFrom } from "./auth.js";
-import type { DocumentStore, VersionSummary } from "./store.js";
+import type { DocumentStore, Missing, VersionSummary } from "./store.js";
 
 export interface NotesServerOptions {
   store: DocumentStore;
@@ -46,6 +46,8 @@ export function createNotesServer(options: NotesServerOptions): Server {
   // Who changed each page since it was last stored. The store hook knows
   // only the last of them; a version written by two people is theirs both.
   const writers = new Map<string, Set<string>>();
+  // The pages linked to and not written yet, until a page is stored again.
+  let missing: Promise<Missing[]> | null = null;
 
   /**
    * What a store carries besides the document: who, why, and room for the
@@ -84,6 +86,7 @@ export function createNotesServer(options: NotesServerOptions): Server {
     if (names.length === 0 && context.user !== undefined) names.push(context.user.name);
     const author = names.length === 0 ? null : names.join(", ");
     await store.save({ name, body, hash: digest, text: toText(body, schema), errors, updatedBy: context.user?.name ?? null, links: linksOf(body) }, state);
+    missing = null;
     if (latest !== null && latest.hash === digest) {
       context.stored = latest;
       return;
@@ -214,10 +217,21 @@ export function createNotesServer(options: NotesServerOptions): Server {
   // checked everywhere: no route serves it, so it is listed nowhere.
   const named = <T extends { name: string }>(rows: T[]): T[] => rows.filter((row) => isPageName(row.name));
   // The pages, and the pages linked to and not written yet, worked out here
-  // rather than from every page's links in every browser.
+  // rather than from every page's links in every browser; and once per
+  // change to the pages, not on every tab's poll.
   app.get("/api/pages", async (_request, response) => {
-    const [pages, missing] = await Promise.all([store.list(), store.missing()]);
-    response.json({ pages: named(pages), missing });
+    const pages = await store.list();
+    const shown = named(pages);
+    if (missing === null) {
+      const hidden = pages.filter((page) => !isPageName(page.name)).map((page) => page.name);
+      const pending = store.missing(hidden).then((found) => named(found));
+      missing = pending;
+      // A failure is not kept: the next poll asks again.
+      pending.catch(() => {
+        if (missing === pending) missing = null;
+      });
+    }
+    response.json({ pages: shown, missing: await missing });
   });
   // The vault: one Markdown file per page, in folders, links as Obsidian writes them.
   app.get("/api/export", async (_request, response) => {

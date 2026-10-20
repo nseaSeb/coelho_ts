@@ -86,6 +86,27 @@ describe.each(stores)("the %s store", (_kind, make) => {
     ]);
   });
 
+  test("sort names by code point, the same in both: capitals first, a letter beyond U+FFFF last", async () => {
+    const store = await make();
+    for (const name of ["𠀀", "a", "Ａ", "B"]) await store.save(page(name, { links: ["later"] }), new Uint8Array());
+    await store.save(page("later-not", { links: ["𠀁", "b", "Ｃ"] }), new Uint8Array());
+    expect(names(await store.list())).toEqual(["B", "a", "later-not", "Ａ", "𠀀"]);
+    expect(names(await store.backlinks("later"))).toEqual(["B", "a", "Ａ", "𠀀"]);
+    expect(await store.missing()).toEqual([
+      { name: "b", linkedFrom: ["later-not"], linkCount: 1 },
+      { name: "later", linkedFrom: ["B", "a", "Ａ", "𠀀"], linkCount: 4 },
+      { name: "Ｃ", linkedFrom: ["later-not"], linkCount: 1 },
+      { name: "𠀁", linkedFrom: ["later-not"], linkCount: 1 },
+    ]);
+  });
+
+  test("leave the hidden pages' links out of what is not written yet", async () => {
+    const store = await make();
+    await store.save(page("../../evil", { links: ["home", "later"] }), new Uint8Array());
+    await store.save(page("a", { links: ["later"] }), new Uint8Array());
+    expect(await store.missing(["../../evil"])).toEqual([{ name: "later", linkedFrom: ["a"], linkCount: 1 }]);
+  });
+
   test("finds pages by the start of their words, in names split at / _ . -", async () => {
     const store = await make();
     await store.save(page("projects/sprint-42", { text: "Planning the release" }), new Uint8Array());
@@ -111,6 +132,8 @@ describe.each(stores)("the %s store", (_kind, make) => {
     expect(await store.version("a", made[0]!.id)).toMatchObject({ previousId: null, note: "imported" });
     expect(await store.version("b", made[0]!.id)).toBeNull();
     expect(await store.version("a", "not-an-id")).toBeNull();
+    expect(await store.version("a", "99999999999999999999")).toBeNull();
+    expect(await store.versions("a", { before: "99999999999999999999" })).toHaveLength(3);
     expect((await store.versions("a", { before: "not-an-id" })).map((version) => version.hash)).toEqual(["h2", "h1", "h0"]);
     await store.updateVersion(made[2]!.id, { body: doc("folded"), hash: "h2b" });
     expect(await store.version("a", made[2]!.id)).toMatchObject({ hash: "h2b", body: doc("folded") });
@@ -148,6 +171,7 @@ describe.each(accountStores)("the %s accounts", (_kind, make) => {
     expect(await accounts.setRole((lin as { id: string }).id, "editor")).toMatchObject({ email: "lin@example.test", role: "editor" });
     expect(await accounts.setRole("999999", "editor")).toBeNull();
     expect(await accounts.setRole("not-an-id", "editor")).toBeNull();
+    expect(await accounts.setRole("99999999999999999999", "editor")).toBeNull();
   });
 
   test("open a session until it expires or is closed", async () => {

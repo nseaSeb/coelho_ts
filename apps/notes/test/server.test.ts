@@ -604,7 +604,8 @@ describe("comment threads", () => {
     await store.save({ name: "../../evil", body: { type: "doc", content: [{ type: "paragraph", content: [{ type: "page_link", attrs: { name: "home" } }] }] }, hash: null, text: "evil words", errors: [], updatedBy: null, links: ["home"] }, new Uint8Array());
     const { http } = await start(store);
     const ada = await signUp(http, "Ada");
-    expect(await (await call(http, "/api/pages", { cookie: ada })).json()).toEqual({ pages: [], missing: [{ name: "home", linkedFrom: ["../../evil"], linkCount: 1 }] });
+    // Nor counted as linking to a page not written yet.
+    expect(await (await call(http, "/api/pages", { cookie: ada })).json()).toEqual({ pages: [], missing: [] });
     expect(await (await call(http, "/api/search?q=evil", { cookie: ada })).json()).toEqual([]);
     expect(await (await call(http, "/api/pages/home/backlinks", { cookie: ada })).json()).toEqual([]);
   });
@@ -629,6 +630,21 @@ describe("comment threads", () => {
     expect(pages.map((one) => one.name)).toEqual(["a", "b", "c", "d", "e", "f", "g"]);
     expect(pages[0]).not.toHaveProperty("links");
     expect(missing).toEqual([{ name: "later", linkedFrom: ["b", "c", "d", "e", "f"], linkCount: 6 }]);
+  });
+
+  test("what is not written yet is worked out once per change to the pages, not on every poll", async () => {
+    const store = memoryStore();
+    const { http } = await start(store);
+    const ada = await signUp(http, "Ada");
+    const asked = vi.spyOn(store, "missing");
+    const listing = async (): Promise<{ missing: Array<{ name: string }> }> => (await call(http, "/api/pages", { cookie: ada })).json() as Promise<{ missing: Array<{ name: string }> }>;
+    expect((await listing()).missing).toEqual([]);
+    await listing();
+    expect(asked).toHaveBeenCalledTimes(1);
+    const linking = { type: "doc", content: [{ type: "paragraph", content: [{ type: "page_link", attrs: { name: "later" } }] }] };
+    expect((await call(http, "/api/import", { body: { pages: [{ name: "home", document: linking }] }, cookie: ada })).status).toBe(200);
+    expect((await listing()).missing.map((one) => one.name)).toEqual(["later"]);
+    expect(asked).toHaveBeenCalledTimes(2);
   });
 
   test("a reader cannot write a page by opening it, and is told it is not written yet", async () => {

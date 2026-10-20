@@ -170,3 +170,19 @@ test("comments: written through the server under each account, seen live by a re
   await expect(lin.locator(".resolved-threads summary")).toHaveText("Resolved (1)");
 });
 
+
+test("a reader cannot open a page nobody wrote, and reads it once an editor has", async ({ browser }, testInfo) => {
+  const attempt = `${testInfo.repeatEachIndex}${testInfo.retry}`;
+  const admin = await account(browser, "Ada", "ada@example.test");
+  const reader = await account(browser, `Sam${attempt}`, `sam-${attempt}@example.test`);
+  const name = `drafts/plan-${attempt}`;
+  await reader.goto(`/#${encodeURIComponent(name)}`);
+  await expect(reader.getByText(`“${name}” is not written yet.`)).toBeVisible();
+  await expect(reader.locator(".status")).toHaveCount(0);
+
+  await admin.goto(`/#${encodeURIComponent(name)}`);
+  await expect(editor(admin).locator("h1")).toHaveText(name);
+  // The list of pages has it now: the reader's tab opens it, without a reload.
+  await expect(editor(reader).locator("h1")).toHaveText(name, { timeout: 10_000 });
+  await expect(reader.getByText("is not written yet")).toHaveCount(0);
+});

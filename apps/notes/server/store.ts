@@ -44,8 +44,25 @@ export interface Missing {
   linkCount: number;
 }
 
-/** Code point order, the same as Postgres's `collate "C"`, wherever it is sorted. */
-export const byCodePoint = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+/**
+ * Code point order: the order of UTF-8 bytes, which is Postgres's
+ * `collate "C"`. Not `<`, which compares UTF-16 units and puts a letter
+ * beyond U+FFFF before "Ａ". Both stores sort names this way.
+ */
+export function byCodePoint(a: string, b: string): number {
+  const left = [...a];
+  const right = [...b];
+  for (let at = 0; at < Math.min(left.length, right.length); at += 1) {
+    const difference = (left[at] as string).codePointAt(0)! - (right[at] as string).codePointAt(0)!;
+    if (difference !== 0) return difference;
+  }
+  return left.length - right.length;
+}
+
+/** A row id: a bigint, up to 18 digits. Anything else is no row, never a query error. */
+export function isId(value: string): boolean {
+  return /^\d{1,18}$/.test(value);
+}
 
 export interface DocumentStore {
   /** The Yjs state of a page, or `null` for a page never stored. */
@@ -58,8 +75,9 @@ export interface DocumentStore {
   /**
    * The pages linked to and not written yet, by name, each with how many
    * pages link to it and the first five of them, by name in code point order.
+   * Links from the pages named in `hidden` are not counted.
    */
-  missing(): Promise<Missing[]>;
+  missing(hidden?: string[]): Promise<Missing[]>;
   /** The pages that link to this one. */
   backlinks(name: string): Promise<Array<Pick<StoredPage, "name" | "updatedAt">>>;
   /** Every page with its body, for an export. */
@@ -105,7 +123,7 @@ export function memoryStore(): DocumentStore {
     threads: async (name) => discussions.get(name)?.threads ?? [],
     versions: async (name, page = {}) => {
       // An id that is not one is ignored, as Postgres's store does.
-      const before = page.before !== undefined && /^\d+$/.test(page.before) ? Number(page.before) : null;
+      const before = page.before !== undefined && isId(page.before) ? Number(page.before) : null;
       return history
         .filter((version) => version.name === name && (before === null || Number(version.id) < before))
         .reverse()
@@ -138,14 +156,15 @@ export function memoryStore(): DocumentStore {
       void rows.set(page.name, { page: { ...page, updatedBy: page.updatedBy ?? rows.get(page.name)?.page.updatedBy ?? null, updatedAt: new Date().toISOString() }, state }),
     get: async (name) => rows.get(name)?.page ?? null,
     list: async () =>
-      [...rows.values()].map(({ page }) => ({ name: page.name, hash: page.hash, updatedBy: page.updatedBy, updatedAt: page.updatedAt })).sort((a, b) => a.name.localeCompare(b.name)),
-    missing: async () => {
+      [...rows.values()].map(({ page }) => ({ name: page.name, hash: page.hash, updatedBy: page.updatedBy, updatedAt: page.updatedAt })).sort((a, b) => byCodePoint(a.name, b.name)),
+    missing: async (hidden = []) => {
       const linking = new Map<string, string[]>();
       for (const { page } of rows.values()) {
+        if (hidden.includes(page.name)) continue;
         for (const link of page.links) {
           if (rows.has(link)) continue;
-          const from = linking.get(link) ?? [];
-          if (from.length === 0) linking.set(link, from);
+          let from = linking.get(link);
+          if (from === undefined) linking.set(link, (from = []));
           from.push(page.name);
         }
       }
@@ -154,7 +173,7 @@ export function memoryStore(): DocumentStore {
         .map(([name, from]) => ({ name, linkedFrom: from.sort(byCodePoint).slice(0, 5), linkCount: from.length }));
     },
     backlinks: async (name) =>
-      [...rows.values()].filter(({ page }) => page.links.includes(name)).map(({ page }) => ({ name: page.name, updatedAt: page.updatedAt })).sort((a, b) => a.name.localeCompare(b.name)),
+      [...rows.values()].filter(({ page }) => page.links.includes(name)).map(({ page }) => ({ name: page.name, updatedAt: page.updatedAt })).sort((a, b) => byCodePoint(a.name, b.name)),
     all: async () => [...rows.values()].map(({ page }) => page),
     search: async (query) => {
       const words = wordsOf(query).map((word) => word.toLowerCase());
@@ -166,7 +185,7 @@ export function memoryStore(): DocumentStore {
         if (!words.every((word) => tokens.some((token) => token.startsWith(word)))) continue;
         found.push({ name: page.name, snippet: snippetOf(page.text, words) });
       }
-      return found.sort((a, b) => a.name.localeCompare(b.name));
+      return found.sort((a, b) => byCodePoint(a.name, b.name));
     },
     close: async () => {},
   };
@@ -246,20 +265,21 @@ export async function postgresStore(pool: pg.Pool): Promise<DocumentStore> {
       return result.rows[0] === undefined ? null : row(result.rows[0]);
     },
     list: async () => {
-      const result = await pool.query("select name, hash, updated_by, updated_at from pages order by name");
+      const result = await pool.query('select name, hash, updated_by, updated_at from pages order by name collate "C"');
       return result.rows.map((r) => ({ name: r.name as string, hash: (r.hash as string | null) ?? null, updatedBy: (r.updated_by as string | null) ?? null, updatedAt: (r.updated_at as Date).toISOString() }));
     },
-    missing: async () => {
+    missing: async (hidden = []) => {
       const result = await pool.query(
         `select link as name, (array_agg(p.name order by p.name collate "C"))[1:5] as linked_from, count(*)::int as link_count
          from pages p cross join lateral unnest(p.links) as link
-         where not exists (select 1 from pages q where q.name = link)
+         where not exists (select 1 from pages q where q.name = link) and p.name <> all($1::text[])
          group by link order by link collate "C"`,
+        [hidden],
       );
       return result.rows.map((r) => ({ name: r.name as string, linkedFrom: r.linked_from as string[], linkCount: r.link_count as number }));
     },
     backlinks: async (name) => {
-      const result = await pool.query("select name, updated_at from pages where $1 = any(links) order by name", [name]);
+      const result = await pool.query('select name, updated_at from pages where $1 = any(links) order by name collate "C"', [name]);
       return result.rows.map((r) => ({ name: r.name as string, updatedAt: (r.updated_at as Date).toISOString() }));
     },
     all: async () => {
@@ -274,13 +294,13 @@ export async function postgresStore(pool: pg.Pool): Promise<DocumentStore> {
       const tsquery = words.map((word) => `${word}:*`).join(" & ");
       const result = await pool.query(
         `select name, ts_headline('simple', text, to_tsquery('simple', $1), 'StartSel=' || chr(1) || ', StopSel=' || chr(2) || ', MaxWords=18, MinWords=6') as snippet
-         from pages where search_words @@ to_tsquery('simple', $1) order by ts_rank(search_words, to_tsquery('simple', $1)) desc, name limit 30`,
+         from pages where search_words @@ to_tsquery('simple', $1) order by ts_rank(search_words, to_tsquery('simple', $1)) desc, name collate "C" limit 30`,
         [tsquery],
       );
       return result.rows.map((r) => ({ name: r.name as string, snippet: r.snippet as string }));
     },
     versions: async (name, page = {}) => {
-      const before = page.before !== undefined && /^\d+$/.test(page.before) ? page.before : null;
+      const before = page.before !== undefined && isId(page.before) ? page.before : null;
       const result = await pool.query(
         "select id, name, hash, created_by, note, created_at, updated_at from page_versions where name = $1 and ($2::bigint is null or id < $2) order by id desc limit $3",
         [name, before, Math.min(page.limit ?? 50, 200)],
@@ -288,7 +308,7 @@ export async function postgresStore(pool: pg.Pool): Promise<DocumentStore> {
       return result.rows.map((r) => versionOf(r) as VersionSummary);
     },
     version: async (name, id) => {
-      if (!/^\d+$/.test(id)) return null;
+      if (!isId(id)) return null;
       const result = await pool.query(
         "select *, (select max(id) from page_versions p where p.name = v.name and p.id < v.id) as previous_id from page_versions v where name = $1 and id = $2",
         [name, id],

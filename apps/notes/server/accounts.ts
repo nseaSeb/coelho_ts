@@ -1,6 +1,7 @@
 import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import pg from "pg";
+import { isId } from "./store.js";
 
 const scrypt = promisify(scryptCallback) as (password: string, salt: Buffer, length: number, options: { N: number; r: number; p: number; maxmem: number }) => Promise<Buffer>;
 
@@ -146,8 +147,7 @@ export async function postgresAccounts(pool: pg.Pool): Promise<AccountStore> {
     },
     list: async () => (await pool.query("select id, email, name, role from users order by id")).rows.map(user),
     setRole: async (id, role) => {
-      // An id is a bigint: anything else is no account, not a query error.
-      if (!/^\d{1,18}$/.test(id)) return null;
+      if (!isId(id)) return null;
       const result = await pool.query("update users set role = $2 where id = $1 returning id, email, name, role", [id, role]);
       return result.rows[0] === undefined ? null : user(result.rows[0]);
     },

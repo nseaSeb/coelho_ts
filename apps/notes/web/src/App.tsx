@@ -36,7 +36,15 @@ function Workspace({ me, refresh }: { me: Me; refresh: () => void }): ReactNode 
   const linkable = useMemo(() => [...listing.pages, ...listing.missing].map((page) => page.name), [listing]);
   useEffect(() => {
     let live = true;
-    const read = (): void => void api<Listing>("/api/pages").then((all) => live && setListing(all), () => {});
+    // The same listing as before is kept as it was: nothing built from it is built again.
+    let last = "";
+    const read = (): void =>
+      void api<Listing>("/api/pages").then((all) => {
+        const now = JSON.stringify(all);
+        if (!live || now === last) return;
+        last = now;
+        setListing(all);
+      }, () => {});
     read();
     const timer = setInterval(read, 3000);
     return () => {
@@ -75,7 +83,7 @@ function Workspace({ me, refresh }: { me: Me; refresh: () => void }): ReactNode 
       <div className="frame">
         <Sidebar listing={listing} current={name} me={me} />
         {isPageName(name) ? (
-          <Page key={`${name}:${me.role}`} name={name} me={me} linkable={linkable} onReauthenticated={refresh} />
+          <Page key={`${name}:${me.role}`} name={name} me={me} linkable={linkable} written={listing.pages.some((page) => page.name === name)} onReauthenticated={refresh} />
         ) : (
           <div className="placeholder">“{name}” is not a page name: letters, digits, - _ . and / for folders.</div>
         )}
@@ -86,12 +94,27 @@ function Workspace({ me, refresh }: { me: Me; refresh: () => void }): ReactNode 
 
 type Status = "connecting" | "connected" | "disconnected";
 
-function Page({ name, me, linkable, onReauthenticated }: { name: string; me: Me; linkable: string[]; onReauthenticated: () => void }): ReactNode {
+interface PageProps {
+  name: string;
+  me: Me;
+  linkable: string[];
+  /** Whether the list of pages has it: a page refused as not written yet is opened again once it is. */
+  written: boolean;
+  onReauthenticated: () => void;
+}
+
+function Page({ name, me, linkable, written, onReauthenticated }: PageProps): ReactNode {
   const [provider, setProvider] = useState<HocuspocusProvider | null>(null);
   const [status, setStatus] = useState<Status>("connecting");
   const [synced, setSynced] = useState(false);
   // A reader opening a page nobody wrote: opening it would write it.
   const [unwritten, setUnwritten] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (!unwritten || !written) return;
+    setUnwritten(false);
+    setAttempt((count) => count + 1);
+  }, [unwritten, written]);
   const [discussion, setDiscussion] = useState<Discussion | null>(null);
   const [tab, setTab] = useState<SideTab>("page");
 
@@ -124,15 +147,18 @@ function Page({ name, me, linkable, onReauthenticated }: { name: string; me: Me;
       setSynced(false);
     };
     // The account is fixed for this page's lifetime: a new role remounts it.
-  }, [name]);
+    // A new attempt connects again, for a page written since it was refused.
+  }, [name, attempt]);
 
   return (
     <div className="layout">
       <section className="writing">
-        <div className="status">
-          <span className={`dot ${status}`} /> {status}
-          {status === "connected" && !synced ? " · loading the page…" : ""}
-        </div>
+        {unwritten ? null : (
+          <div className="status">
+            <span className={`dot ${status}`} /> {status}
+            {status === "connected" && !synced ? " · loading the page…" : ""}
+          </div>
+        )}
         {me.role === "reader" ? <p className="readonly">You can read this page. An admin can let you edit it.</p> : null}
         {unwritten ? (
           <div className="placeholder">“{name}” is not written yet. An editor or an admin can write it.</div>
