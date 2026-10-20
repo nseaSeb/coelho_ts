@@ -14,7 +14,7 @@ migration.
 
 ![The demo: the editor with an @ mention list open under the caret, a mention drawn as a React chip, a commented passage with its thread beside the editor, and under it the HTML, the HTML a stranger's comment would get, and its source, all recomputed from the stored document.](apps/demo/demo.png)
 
-Run it: `pnpm install && pnpm --filter coelho-demo dev`, then http://localhost:5180.
+Run it locally: `pnpm install && pnpm --filter coelho-demo dev`, then http://localhost:5180.
 
 ## Why
 
@@ -28,6 +28,16 @@ separates the format from the editor:
   in Node, in a worker. Your schema, your validation, your rendering.
 - the editor (ProseMirror, MIT) is an adapter behind that boundary. Swap
   it, upgrade it, or replace it: the stored documents do not change.
+
+**[Live demo](https://nseaseb.github.io/coelho_ts/)**
+
+```
+npm install @nseaprotector/coelho-core @nseaprotector/coelho-react
+```
+
+Not only React: `coelho-core` runs anywhere, and `createEditor` from
+`coelho-prosemirror` mounts the editor with no framework (see
+[Vue and Angular](#vue-and-angular)).
 
 ## Packages
 
@@ -181,6 +191,65 @@ What the search found, none of it in the writer's escaping:
 `scripts/sanitize-parity` also exports 800 of these documents with this
 writer's Markdown, for `compare.exs` to replay through coelho's
 `to_markdown` from a coelho checkout; it reports the edge entities apart.
+
+## Vue and Angular
+
+`createEditor` mounts the editor on an element and reports changes; a
+component wraps it in a few lines.
+
+```vue
+<!-- Vue 3: <CoelhoField v-model="body" /> -->
+<script setup lang="ts">
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { defaultSchema, type Node } from "@nseaprotector/coelho-core";
+import { createEditor, type CoelhoEditor } from "@nseaprotector/coelho-prosemirror";
+
+const model = defineModel<Node | null>();
+const host = ref<HTMLElement>();
+const schema = defaultSchema();
+let editor: CoelhoEditor | undefined;
+
+onMounted(() => {
+  editor = createEditor(host.value!, { schema, value: model.value, onChange: (doc) => (model.value = doc) });
+});
+watch(model, (doc) => editor?.setDocument(doc ?? null));
+onBeforeUnmount(() => editor?.destroy());
+</script>
+
+<template><div ref="host" class="coelho-editor" /></template>
+```
+
+```ts
+// Angular 17+: <coelho-field [value]="body" (changed)="body = $event" />
+import { Component, ElementRef, effect, input, output, viewChild, type AfterViewInit, type OnDestroy } from "@angular/core";
+import { defaultSchema, type Node } from "@nseaprotector/coelho-core";
+import { createEditor, type CoelhoEditor } from "@nseaprotector/coelho-prosemirror";
+
+@Component({ selector: "coelho-field", standalone: true, template: `<div #host class="coelho-editor"></div>` })
+export class CoelhoFieldComponent implements AfterViewInit, OnDestroy {
+  value = input<Node | null>(null);
+  changed = output<Node>();
+  private host = viewChild.required<ElementRef<HTMLElement>>("host");
+  private editor?: CoelhoEditor;
+  private schema = defaultSchema();
+
+  constructor() {
+    effect(() => this.editor?.setDocument(this.value()));
+  }
+
+  ngAfterViewInit(): void {
+    this.editor = createEditor(this.host().nativeElement, { schema: this.schema, value: this.value(), onChange: (doc) => this.changed.emit(doc) });
+  }
+
+  ngOnDestroy(): void {
+    this.editor?.destroy();
+  }
+}
+```
+
+`setDocument` leaves the editor alone when it is handed the document it
+already holds, so feeding `onChange` back into the input does not reset
+the selection or the history.
 
 ## React inside the editor
 

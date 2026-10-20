@@ -1,23 +1,72 @@
 {
   "name": "@nseaprotector/coelho-collab",
   "version": "0.1.0",
-  "description": "Collaborative editing for coelho over Yjs: the CRDT carries and merges, the stored document stays coelho's validated JSON.",
+  "description": "Real-time collaborative rich text over Yjs for ProseMirror: cursors, offline merge, per-writer undo, comment threads that survive other writers, and a validated document to store.",
+  "keywords": [
+    "yjs",
+    "crdt",
+    "collaboration",
+    "collaborative-editing",
+    "realtime",
+    "real-time",
+    "multiplayer",
+    "prosemirror",
+    "rich-text",
+    "editor",
+    "comments",
+    "hocuspocus",
+    "y-prosemirror",
+    "typescript"
+  ],
   "license": "MIT",
+  "author": "Sébastien Portrait <nseaprotector@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nseaSeb/coelho_ts.git",
+    "directory": "packages/collab"
+  },
+  "homepage": "https://github.com/nseaSeb/coelho_ts/tree/main/packages/collab#readme",
+  "bugs": {
+    "url": "https://github.com/nseaSeb/coelho_ts/issues"
+  },
   "type": "module",
   "sideEffects": false,
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
-  "files": ["dist"],
-  "scripts": { "build": "tsc -b" },
-  "peerDependencies": { "yjs": "^13.6.0" },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "prepublishOnly": "tsc -b"
+  },
+  "peerDependencies": {
+    "yjs": "^13.6.0"
+  },
   "dependencies": {
     "@nseaprotector/coelho-core": "workspace:*",
     "@nseaprotector/coelho-prosemirror": "workspace:*",
-    "prosemirror-keymap": "1.2.3",
-    "prosemirror-model": "1.25.11",
-    "prosemirror-state": "1.4.4",
-    "prosemirror-view": "1.42.2",
-    "y-prosemirror": "1.3.7",
-    "y-protocols": "1.0.7"
+    "prosemirror-keymap": "^1.2.3",
+    "prosemirror-model": "^1.25.11",
+    "prosemirror-state": "^1.4.4",
+    "prosemirror-view": "^1.42.2",
+    "y-prosemirror": "^1.3.7",
+    "y-protocols": "^1.0.7"
   },
-  "devDependencies": { "yjs": "13.6.33" }
+  "devDependencies": {
+    "yjs": "13.6.33"
+  }
 }

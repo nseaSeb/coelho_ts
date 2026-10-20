@@ -1,8 +1,33 @@
 {
   "name": "@nseaprotector/coelho-react",
   "version": "0.1.0",
-  "description": "The coelho editor as a React component: React owns the container, ProseMirror owns what is inside.",
+  "description": "A React rich text editor on ProseMirror: a controlled component and hook, StrictMode-safe, React components as node views, suggestion menus for @mentions and / commands.",
+  "keywords": [
+    "react",
+    "react-component",
+    "react-hooks",
+    "prosemirror",
+    "rich-text",
+    "richtext",
+    "editor",
+    "wysiwyg",
+    "wysiwyg-editor",
+    "text-editor",
+    "mentions",
+    "node-views",
+    "typescript"
+  ],
   "license": "MIT",
+  "author": "Sébastien Portrait <nseaprotector@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nseaSeb/coelho_ts.git",
+    "directory": "packages/react"
+  },
+  "homepage": "https://github.com/nseaSeb/coelho_ts/tree/main/packages/react#readme",
+  "bugs": {
+    "url": "https://github.com/nseaSeb/coelho_ts/issues"
+  },
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -11,11 +36,21 @@
       "import": "./dist/index.js"
     }
   },
+  "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "src",
+    "README.md"
   ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "build": "tsc -b"
+    "build": "tsc -b",
+    "prepublishOnly": "tsc -b"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0",
@@ -24,9 +59,9 @@
   "dependencies": {
     "@nseaprotector/coelho-core": "workspace:*",
     "@nseaprotector/coelho-prosemirror": "workspace:*",
-    "prosemirror-model": "1.25.11",
-    "prosemirror-state": "1.4.4",
-    "prosemirror-view": "1.42.2"
+    "prosemirror-model": "^1.25.11",
+    "prosemirror-state": "^1.4.4",
+    "prosemirror-view": "^1.42.2"
   },
   "devDependencies": {
     "@types/react": "19.1.6",

@@ -1,8 +1,37 @@
 {
   "name": "@nseaprotector/coelho-core",
   "version": "0.1.0",
-  "description": "Structured rich text, the storage layer: schema, validation, canonical form, hash, safe HTML and plain text. No editor, no DOM, no dependency.",
+  "description": "Structured rich text you own: a schema, strict validation, a canonical JSON form and its hash, sanitize, safe HTML, Markdown and plain text. No editor, no DOM, no dependency.",
+  "keywords": [
+    "rich-text",
+    "richtext",
+    "prosemirror",
+    "json",
+    "schema",
+    "validation",
+    "sanitize",
+    "sanitizer",
+    "html",
+    "markdown",
+    "commonmark",
+    "xss",
+    "canonical",
+    "hash",
+    "comments",
+    "anchors",
+    "typescript"
+  ],
   "license": "MIT",
+  "author": "Sébastien Portrait <nseaprotector@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nseaSeb/coelho_ts.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/nseaSeb/coelho_ts/tree/main/packages/core#readme",
+  "bugs": {
+    "url": "https://github.com/nseaSeb/coelho_ts/issues"
+  },
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -11,8 +40,20 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "build": "tsc -b"
+    "build": "tsc -b",
+    "prepublishOnly": "tsc -b"
   }
 }
