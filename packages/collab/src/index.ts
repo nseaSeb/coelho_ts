@@ -110,4 +110,4 @@ function markDestroyed(): Plugin {
 
 export { relativeAnchors, type RangeStore, type RelativeRange } from "./anchors.js";
 export { LocalRelay } from "./relay.js";
-export { sharedThreads, THREADS, type SharedThread, type SharedThreads } from "./threads.js";
+export { sharedThreads, THREADS, type SharedThread, type SharedThreads, type SharedThreadsOptions } from "./threads.js";

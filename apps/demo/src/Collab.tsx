@@ -1,11 +1,11 @@
 import { anchorAt, hash, toHtml, type Schema } from "@coelho/core";
-import { collab, FIELD, LocalRelay, seed, sharedThreads, snapshot } from "@coelho/collab";
+import { collab, FIELD, LocalRelay, seed, sharedThreads, snapshot, THREADS } from "@coelho/collab";
 import { addComment, commentsPlugin, commentsState, relocateComments, selectComment, setActiveComment } from "@coelho/prosemirror";
 import { Toolbar, useCoelhoEditor } from "@coelho/react";
 import type { Node } from "@coelho/core";
 import type { Command } from "prosemirror-state";
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { ThreadCard } from "./Comments.js";
+import { commentSchema, ThreadCard } from "./Comments.js";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 
@@ -86,6 +86,18 @@ export function Collab({ schema }: { schema: Schema }): ReactNode {
         >
           A peer writes a javascript: link past the editor
         </button>
+        <button
+          type="button"
+          title="Writes garbage into Sacha's shared threads directly, as any client of the room could"
+          onClick={() => {
+            const doc = room.writers[1]?.doc;
+            if (doc === undefined) return;
+            writeHostileThreads(doc);
+            changed();
+          }}
+        >
+          A peer writes hostile threads
+        </button>
       </div>
       <div className="panes">
         {room.writers.map((writer) => (
@@ -101,7 +113,7 @@ function Pane({ schema, writer, onChange }: { schema: Schema; writer: Writer; on
   // Built once: the setup itself makes fresh collaboration plugins for every view.
   const [setup] = useState(() => collab({ doc: writer.doc, awareness: writer.awareness }));
   // Threads live in the same shared document as the text, beside it.
-  const [threads] = useState(() => sharedThreads(writer.doc, writer.name));
+  const [threads] = useState(() => sharedThreads(writer.doc, writer.name, { bodies: commentSchema }));
   const [plugins] = useState(() => [commentsPlugin({ schema, source: threads.source })]);
   const editor = useCoelhoEditor({ schema, setup, plugins, history: false, onChange });
   const view = useRef(editor.view);
@@ -216,4 +228,31 @@ function Stored({ schema, writers }: { schema: Schema; writers: Writer[] }): Rea
       ))}
     </div>
   );
+}
+
+/**
+ * What a peer could write into the shared threads without the editor: an
+ * entry that is not a thread, a thread whose range and comments are
+ * nonsense, and a reply whose body holds a node no schema knows.
+ */
+export function writeHostileThreads(doc: Y.Doc): void {
+  const threads = doc.getMap<unknown>(THREADS);
+  doc.transact(() => {
+    threads.set("not-a-thread", "just a string");
+    const broken = new Y.Map<unknown>();
+    threads.set("broken", broken);
+    broken.set("quote", 42);
+    broken.set("range", { from: "nowhere", to: [1, 2, 3], last: null });
+    broken.set("comments", "not a list");
+    const hostile = new Y.Map<unknown>();
+    threads.set("hostile", hostile);
+    hostile.set("quote", "Two writers");
+    hostile.set("opened", 1);
+    const comments = new Y.Array<unknown>();
+    hostile.set("comments", comments);
+    comments.push([
+      { id: "x1", author: "Mallory", createdAt: "", body: { type: "doc", content: [{ type: "script", content: [{ type: "text", text: "alert(1)" }] }, { type: "paragraph", content: [{ type: "text", text: "Kept words." }] }] } },
+      "not a comment",
+    ]);
+  });
 }

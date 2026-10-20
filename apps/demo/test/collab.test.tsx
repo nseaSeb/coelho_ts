@@ -140,4 +140,19 @@ describe("two writers in the demo", () => {
     await act(async () => new Promise((resolve) => setTimeout(resolve, 30)));
     expect(container.querySelector(".stored .ok")).not.toBeNull();
   });
+
+  test("hostile threads written by a peer render repaired, and the panes go on working", async () => {
+    const container = mount();
+    await act(async () => {
+      button(container, /hostile threads/).click();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    const [camillePane] = [...container.querySelectorAll(".collab .pane")] as HTMLElement[];
+    const cards = [...camillePane!.querySelectorAll(".thread")].map((card) => card.textContent ?? "");
+    expect(cards.some((text) => text.includes("Mallory") && text.includes("Kept words."))).toBe(true);
+    expect(camillePane!.innerHTML).not.toContain("<script");
+    const [camille, sacha] = panes(container) as [HTMLElement, HTMLElement];
+    await retype(sacha, "Still working.");
+    expect(camille.querySelector("p")?.textContent).toBe("Still working.");
+  });
 });

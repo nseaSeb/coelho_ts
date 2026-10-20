@@ -186,7 +186,12 @@ function applyForeign(tr: Transaction, previous: CommentsState, state: EditorSta
   const resolved = listed === undefined ? new Set(previous.resolved) : new Set(listed.filter((thread) => thread.resolved).map((thread) => thread.id));
   let json: CoelhoNode | null = null;
   for (const [id, anchor] of entries) {
-    const located = source.locate(state, id);
+    let located: ReturnType<AnchorSource["locate"]>;
+    try {
+      located = source.locate(state, id);
+    } catch {
+      located = undefined;
+    }
     if (located != null && located.from < located.to && located.to <= tr.doc.content.size) {
       anchors.set(id, anchorIn(tr.doc, located.from, located.to));
       continue;

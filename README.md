@@ -19,9 +19,10 @@ Run it: `pnpm install && pnpm --filter coelho-demo dev`, then http://localhost:5
 ## Why
 
 A rich text editor is the one dependency every back-office ends up with,
-and the one that turns into a subscription: collaboration, comments,
-versions and import/export sit behind a paid tier, and the stored format
-sits behind the editor. This project separates the two:
+and the one that is hardest to leave: the stored format sits behind the
+editor, and so do the features around it — collaboration, comments,
+import and export. This project keeps all of them in code you own, and
+separates the format from the editor:
 
 - `@coelho/core` owns the format. Zero dependencies, runs in the browser,
   in Node, in a worker. Your schema, your validation, your rendering.
@@ -135,9 +136,8 @@ document and its hash are the same with or without them.
 
 The demo's second section has two writers, each with their own Y.Doc,
 joined by `LocalRelay` inside the page, with presence, an offline switch,
-shared threads, and what each would store with its hash. y-websocket or
-Hocuspocus (both MIT) do the same over a socket; what Tiptap charges for
-is hosting, not the protocol.
+shared threads, and what each would store with its hash. Over a network,
+y-websocket or Hocuspocus, both MIT, do the same; you run the server.
 
 ## Markdown
 

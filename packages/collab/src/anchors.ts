@@ -41,21 +41,33 @@ export function relativeAnchors(store: RangeStore = inMemory()): AnchorSource {
       const binding = bindingOf(state);
       if (binding === undefined || to <= from) return;
       const relative = (pos: number): unknown => Y.relativePositionToJSON(absolutePositionToRelativePosition(pos, binding.type, binding.mapping as never));
-      store.set(id, { from: relative(from), to: relative(to), last: relative(to - 1) });
+      try {
+        store.set(id, { from: relative(from), to: relative(to), last: relative(to - 1) });
+      } catch {
+        // Not recorded: the thread is then found by its quote.
+      }
     },
     locate: (state, id) => {
       const binding = bindingOf(state);
       const range = store.get(id);
-      if (binding === undefined || range === undefined) return undefined;
-      const absolute = (json: unknown): number | null =>
-        relativePositionToAbsolutePosition(binding.doc, binding.type, Y.createRelativePositionFromJSON(json), binding.mapping as never);
-      const from = absolute(range.from);
-      const end = absolute(range.to);
-      const last = absolute(range.last);
-      if (from === null || end === null || end <= from) return null;
-      // A relative position whose item was deleted moves to the next one:
-      // the range ends at its last character, or at its end if that went.
-      return { from, to: last === null ? end : Math.min(last + 1, end) };
+      if (binding === undefined || typeof range !== "object" || range === null) return undefined;
+      // A range is read back from the shared document, where any peer can
+      // have written anything: one that cannot be resolved is no record,
+      // and the thread is looked for by its quote.
+      try {
+        const absolute = (json: unknown): number | null =>
+          relativePositionToAbsolutePosition(binding.doc, binding.type, Y.createRelativePositionFromJSON(json), binding.mapping as never);
+        const from = absolute(range.from);
+        const end = absolute(range.to);
+        const last = absolute(range.last);
+        if (from === null || end === null || end <= from) return null;
+        if (![from, end].every(Number.isInteger)) return undefined;
+        // A relative position whose item was deleted moves to the next one:
+        // the range ends at its last character, or at its end if that went.
+        return { from, to: last === null || !Number.isInteger(last) ? end : Math.min(last + 1, end) };
+      } catch {
+        return undefined;
+      }
     },
   };
 }

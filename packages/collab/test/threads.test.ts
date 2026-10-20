@@ -6,7 +6,7 @@ import { EditorView } from "prosemirror-view";
 import { Awareness } from "y-protocols/awareness";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import * as Y from "yjs";
-import { collab, LocalRelay, seed, sharedThreads, snapshot, type SharedThreads } from "../src/index.js";
+import { collab, LocalRelay, seed, sharedThreads, snapshot, THREADS, type SharedThreads } from "../src/index.js";
 
 const schema = defaultSchema();
 const pm = proseMirrorSchemaFor(schema);
@@ -40,7 +40,7 @@ function writer(relay: LocalRelay, name: string, seeded = false): Writer {
   const awareness = new Awareness(doc);
   if (seeded) seed(doc, schema, stored);
   relay.join(doc, awareness);
-  const threads = sharedThreads(doc, name);
+  const threads = sharedThreads(doc, name, { bodies: defaultSchema() });
   const fresh = collab({ doc, awareness })(pm);
   const view = new EditorView(document.body.appendChild(document.createElement("div")), {
     state: EditorState.create({ doc: fresh.doc, plugins: [...fresh.plugins, commentsPlugin({ schema, source: threads.source }), ...coelhoPlugins(pm, { history: false })] }),
@@ -145,5 +145,46 @@ describe("shared threads", () => {
     await settle();
     expect(highlighted(camille, "t1")).toBe("chat");
     expect(highlighted(sacha, "t1")).toBe("chat");
+  });
+
+  test("are not a trust boundary: what a peer writes into them past the editor breaks nothing, and is repaired", async () => {
+    const relay = new LocalRelay();
+    const camille = writer(relay, "Camille", true);
+    const sacha = writer(relay, "Sacha");
+    const threads = sacha.doc.getMap<unknown>(THREADS);
+    sacha.doc.transact(() => {
+      threads.set("not-a-thread", "just a string");
+      const broken = new Y.Map<unknown>();
+      threads.set("broken", broken);
+      broken.set("quote", 42);
+      broken.set("range", { from: "nowhere", to: [1, 2, 3], last: null });
+      broken.set("comments", "not a list");
+      const hostile = new Y.Map<unknown>();
+      threads.set("hostile", hostile);
+      hostile.set("quote", "cat");
+      const comments = new Y.Array<unknown>();
+      hostile.set("comments", comments);
+      comments.push([{ id: "x", author: "Mallory", body: { type: "doc", content: [{ type: "script" }, { type: "paragraph", content: [{ type: "text", text: "Kept words." }] }] } }, "not a comment"]);
+    });
+    await settle();
+
+    // Camille's editor still takes remote typing and relocates threads.
+    const { view } = sacha;
+    view.dispatch(view.state.tr.insertText("Look: ", 1));
+    await settle();
+    expect(camille.view.state.doc.textContent).toBe("Look: The cat sat on the mat.");
+
+    const listed = camille.threads.list();
+    expect(listed.map((thread) => thread.id).sort()).toEqual(["broken", "hostile"]);
+    const hostile = listed.find((thread) => thread.id === "hostile");
+    expect(hostile?.comments).toEqual([{ id: "x", author: "Mallory", createdAt: "", body: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Kept words." }] }] } }]);
+    // Threads with no usable range are not placed on a guess: a bare quote
+    // with no context around it could be any "cat".
+    expect(commentsState(camille.view.state)?.anchors.has("hostile")).toBe(false);
+    expect(commentsState(camille.view.state)?.anchors.has("broken")).toBe(false);
+    // And a reply still lands on a thread whose comments were not a list.
+    camille.threads.reply("broken", said("Camille", "Repaired."));
+    await settle();
+    expect(sacha.threads.list().find((thread) => thread.id === "broken")?.comments.map((c) => c.author)).toEqual(["Camille"]);
   });
 });
