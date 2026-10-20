@@ -12,3 +12,13 @@ export {
   type CommentsState,
   type StoredAnchor,
 } from "./comments.js";
+export {
+  clearSuggestion,
+  createSuggestion,
+  dismissSuggestion,
+  replaceSuggestion,
+  suggestionPlugin,
+  suggestionState,
+  type SuggestionKeys,
+  type SuggestionMatch,
+} from "./suggestion.js";

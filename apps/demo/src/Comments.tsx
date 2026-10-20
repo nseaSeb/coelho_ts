@@ -1,9 +1,10 @@
 import { defineSchema, isBlank, toHtml, validate, type Node, type Thread } from "@coelho/core";
-import { addComment, commentsPlugin, commentsState, removeComment, selectComment, setActiveComment, setCommentResolved } from "@coelho/prosemirror";
+import { addComment, commentsPlugin, commentsState, createSuggestion, removeComment, selectComment, setActiveComment, setCommentResolved } from "@coelho/prosemirror";
 import { CoelhoEditor, Toolbar, useCoelhoEditor } from "@coelho/react";
 import type { Schema } from "@coelho/core";
 import type { Command } from "prosemirror-state";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { MentionChip, Suggestions } from "./Suggestions.js";
 
 /**
  * What a comment may hold: paragraphs, line breaks, and four marks. Kept
@@ -36,6 +37,9 @@ export interface LiveThread extends Thread {
 
 const AUTHORS = ["Camille", "Sacha", "Dominique"];
 
+// Read once by the editor, so defined once.
+const nodeViews = { mention: MentionChip };
+
 interface Props {
   schema: Schema;
   value: Node;
@@ -51,10 +55,12 @@ export function CommentedEditor({ schema, value, onChange, threads, onThreadsCha
   // What the plugin restores whenever the editor state is rebuilt: the
   // threads as the editor last placed them, found again by their quote.
   const live = useRef<LiveThread[]>(threads.map((thread) => ({ ...thread, orphaned: false })));
+  const [suggestion] = useState(() => createSuggestion(["@", "/"]));
   const [plugins] = useState(() => [
     commentsPlugin({ schema, restore: () => live.current.map(({ id, anchor, resolved, orphaned }) => ({ id, anchor, resolved, lost: orphaned })) }),
+    suggestion.plugin,
   ]);
-  const editor = useCoelhoEditor({ schema, value, onChange, plugins });
+  const editor = useCoelhoEditor({ schema, value, onChange, plugins, nodeViews });
   const [author, setAuthor] = useState(AUTHORS[0] as string);
 
   const state = editor.state === null ? undefined : commentsState(editor.state);
@@ -106,6 +112,8 @@ export function CommentedEditor({ schema, value, onChange, threads, onThreadsCha
           </button>
         </div>
         <div ref={editor.ref} className="coelho-editor-content" />
+        {editor.portals}
+        <Suggestions editor={editor} keys={suggestion.keys} />
       </div>
 
       <aside className="threads" aria-label="Comments">

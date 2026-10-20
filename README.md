@@ -27,8 +27,8 @@ sits behind the editor. This project separates the two:
 | Package | What | Status |
 | --- | --- | --- |
 | `@coelho/core` | schema, `validate`, `sanitize`, `canonical`, `hash`, `toHtml`, `toInlineHtml`, `toText`, `isBlank`, trusted/untrusted rendering policy, anchors | `validate`, `canonical`, `hash`, `toHtml` and `toText` byte for byte with coelho's corpus; `sanitize` ported with coelho's own test suite |
-| `@coelho/prosemirror` | coelho schema → ProseMirror `Schema`, editing plugins, anchored comments plugin | working |
-| `@coelho/react` | `<CoelhoEditor>`, `useCoelhoEditor`, default toolbar | working |
+| `@coelho/prosemirror` | coelho schema → ProseMirror `Schema`, editing plugins, anchored comments, suggestion triggers | working |
+| `@coelho/react` | `<CoelhoEditor>`, `useCoelhoEditor`, default toolbar, React node views, `useSuggestion` and `<SuggestionMenu>` | working |
 
 `apps/demo` (`pnpm --filter coelho-demo dev`, http://localhost:5180) shows
 the editor with anchored comments, and under it everything derived from
@@ -87,6 +87,43 @@ const schema = extendSchema(defaultSchema(), {
   },
   marks: { highlight: { class: "hl", render: ["mark", []] } },
 });
+```
+
+## React inside the editor
+
+ProseMirror owns the editable DOM; React owns everything around it. Two
+places cross that line, both without React ever rendering into
+ProseMirror's tree directly.
+
+**Node views.** A leaf node can be drawn in the editor by a React
+component, rendered through a portal into the element ProseMirror creates,
+moves and destroys. The page still renders the node from the schema.
+
+```tsx
+function MentionChip({ node, selected }: NodeViewProps) {
+  return <span className={selected ? "chip selected" : "chip"}>{node.attrs.label}</span>;
+}
+const nodeViews = { mention: MentionChip }; // stable: read once
+<CoelhoEditor schema={schema} nodeViews={nodeViews} value={value} onChange={setValue} />
+```
+
+**Suggestions.** `@` for a mention, `/` for a block: the plugin says what
+is being typed (a trigger must start a word, so `a@b` is an address; the
+query ends at the first space; nothing opens in code), and the list is
+the application's. Arrows, Enter and Tab reach the list through the
+editor, so focus never leaves the text; Escape dismisses until the writer
+starts again elsewhere. The editor carries the combobox ARIA attributes
+while the list is open, and a choice replaces the range the editor holds
+when it is made.
+
+```tsx
+const [{ plugin, keys }] = useState(() => createSuggestion(["@"]));
+const suggestion = useSuggestion(editor, {
+  keys,
+  items: (match) => people.matching(match.query),
+  onSelect: (person) => run(replaceSuggestion(mention.create({ id: person.id, label: person.name }))),
+});
+<SuggestionMenu suggestion={suggestion} label="People">{(person) => person.name}</SuggestionMenu>
 ```
 
 ## Anchored comments

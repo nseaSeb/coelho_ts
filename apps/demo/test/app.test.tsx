@@ -174,4 +174,11 @@ describe("the demo", () => {
     expect(editable.textContent).toBe("Opening hoursOpen every day, book here.Closed on 25 December.");
     expect(editable.innerHTML).not.toContain("javascript:");
   });
+
+  test("draws a mention with a React chip in the editor and with the schema's span on the page", () => {
+    const container = mount();
+    expect(container.querySelector(".workspace .ProseMirror .mention-chip")?.textContent).toBe("CDCamille Durand");
+    const page = [...container.querySelectorAll(".panel")].find((p) => p.textContent?.startsWith("Rendered HTML"));
+    expect(page?.querySelector('span.mention[data-mention="u_camille"]')?.textContent).toBe("@Camille Durand");
+  });
 });

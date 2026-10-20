@@ -3,6 +3,7 @@ import { setBlockType, toggleMark, wrapIn, wrapInList } from "@coelho/prosemirro
 import type { MarkType, NodeType } from "prosemirror-model";
 import type { Command, EditorState } from "prosemirror-state";
 import type { ReactNode } from "react";
+import type { NodeViewComponents } from "./nodeViews.js";
 import { useCoelhoEditor, type CoelhoEditor as Editor } from "./useCoelhoEditor.js";
 
 export interface CoelhoEditorProps {
@@ -13,18 +14,21 @@ export interface CoelhoEditorProps {
   onInvalid?: (errors: ValidationError[]) => void;
   /** Repair a `value` that does not validate instead of refusing it; see `useCoelhoEditor`. */
   repair?: boolean;
+  /** React components drawing leaf nodes in the editor; see `useCoelhoEditor`. */
+  nodeViews?: NodeViewComponents;
   /** Replaces the default toolbar; `null` removes it. */
   toolbar?: ((editor: Editor) => ReactNode) | null;
   className?: string;
 }
 
 /** React owns this element and the toolbar; ProseMirror owns the editable element inside. */
-export function CoelhoEditor({ schema, value, onChange, onInvalid, repair, toolbar, className }: CoelhoEditorProps): ReactNode {
-  const editor = useCoelhoEditor({ schema, value, onChange, onInvalid, repair });
+export function CoelhoEditor({ schema, value, onChange, onInvalid, repair, nodeViews, toolbar, className }: CoelhoEditorProps): ReactNode {
+  const editor = useCoelhoEditor({ schema, value, onChange, onInvalid, repair, nodeViews });
   return (
     <div className={className ?? "coelho-editor"}>
       {toolbar === null ? null : toolbar === undefined ? <Toolbar editor={editor} /> : toolbar(editor)}
       <div ref={editor.ref} className="coelho-editor-content" />
+      {editor.portals}
     </div>
   );
 }

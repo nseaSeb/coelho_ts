@@ -1,12 +1,32 @@
-import { canonical, defaultSchema, extendSchema, hash, isBlank, reanchor, sanitize, textLength, toHtml, toText, validate, type Node, type Thread } from "@coelho/core";
+import { canonical, defaultSchema, escape, extendSchema, hash, isBlank, reanchor, sanitize, tag, textLength, toHtml, toText, validate, type Node, type Thread } from "@coelho/core";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { CommentedEditor, type LiveThread } from "./Comments.js";
 
 // The default schema plus what an application adds: a mark with a class of
 // its own. The editor, the page and the validator all read this one object.
 const schema = extendSchema(defaultSchema(), {
+  nodes: {
+    // A mention is an ordinary node: inline, void, carrying what the page
+    // needs. The page draws it from `render`; the editor draws it with a
+    // React component (see MentionChip). Nothing about the list of people
+    // reaches the schema.
+    mention: {
+      group: "inline",
+      inline: true,
+      void: true,
+      attrs: { id: { required: true, validate: "string" }, label: { default: null, validate: { nullable: "string" } } },
+      render: renderMention,
+      renderUntrusted: renderMention,
+      toText: (node) => `@${String(node.attrs?.label ?? node.attrs?.id ?? "")}`,
+    },
+  },
   marks: { highlight: { class: "hl", render: ["mark", []] } },
 });
+
+function renderMention(node: { attrs?: Record<string, unknown> }): string {
+  const label = String(node.attrs?.label ?? node.attrs?.id ?? "");
+  return tag("span", [["class", "mention"], ["data-mention", String(node.attrs?.id ?? "")]], escape(`@${label}`));
+}
 
 const initial: Node = {
   type: "doc",
@@ -25,7 +45,13 @@ const initial: Node = {
         { type: "text", text: "- ", marks: [{ type: "code" }] },
         { type: "text", text: " or " },
         { type: "text", text: "> ", marks: [{ type: "code" }] },
-        { type: "text", text: " at the start of a line." },
+        { type: "text", text: " at the start of a line, " },
+        { type: "text", text: "@", marks: [{ type: "code" }] },
+        { type: "text", text: " to mention someone, " },
+        { type: "text", text: "/", marks: [{ type: "code" }] },
+        { type: "text", text: " to insert a block. Ask " },
+        { type: "mention", attrs: { id: "u_camille", label: "Camille Durand" } },
+        { type: "text", text: " about it." },
       ],
     },
     {

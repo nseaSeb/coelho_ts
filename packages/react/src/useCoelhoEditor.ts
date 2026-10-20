@@ -3,7 +3,8 @@ import { coelhoPlugins, toProseMirrorDoc, toProseMirrorSchema } from "@coelho/pr
 import type { Node, Schema } from "prosemirror-model";
 import { EditorState, type Plugin, type Transaction } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { NodeViewStore, renderPortals, type NodeViewComponents } from "./nodeViews.js";
 
 export interface UseCoelhoEditorOptions {
   /**
@@ -29,10 +30,17 @@ export interface UseCoelhoEditorOptions {
    */
   repair?: boolean | undefined;
   /**
-   * Plugins added after coelho's own, such as `commentsPlugin`. Read once,
-   * when the editor is built: keep the array's identity stable.
+   * Plugins added to coelho's own, such as `commentsPlugin`, and placed
+   * before them, so a plugin that handles a key is asked before the keymap.
+   * Read once, when the editor is built: keep the array's identity stable.
    */
   plugins?: Plugin[] | undefined;
+  /**
+   * React components drawing leaf nodes in the editor, by node name. The
+   * page still renders those nodes from the schema; this is how the editor
+   * shows them. Read once, when the editor is built.
+   */
+  nodeViews?: NodeViewComponents | undefined;
 }
 
 export interface CoelhoEditor {
@@ -43,6 +51,8 @@ export interface CoelhoEditor {
   /** The current editor state; re-renders the caller when it changes. */
   state: EditorState | null;
   pmSchema: Schema;
+  /** The node views' portals. `CoelhoEditor` renders them; a caller using the hook directly renders this anywhere in its tree. */
+  portals: ReactNode;
 }
 
 /**
@@ -55,6 +65,10 @@ export function useCoelhoEditor(options: UseCoelhoEditorOptions): CoelhoEditor {
   const { schema, value, onChange, onInvalid } = options;
   const pluginsRef = useRef(options.plugins);
   pluginsRef.current = options.plugins;
+  const nodeViewsRef = useRef(options.nodeViews);
+  nodeViewsRef.current = options.nodeViews;
+  const [store] = useState(() => new NodeViewStore());
+  const entries = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const pmSchema = useMemo(() => toProseMirrorSchema(schema), [schema]);
   const viewRef = useRef<EditorView | null>(null);
   const listeners = useRef(new Set<() => void>());
@@ -117,12 +131,15 @@ export function useCoelhoEditor(options: UseCoelhoEditorOptions): CoelhoEditor {
       };
       const doc = load(valueRef.current) ?? (pmSchema.topNodeType.createAndFill() as Node);
       viewRef.current = new EditorView(element, {
-        state: EditorState.create({ doc, plugins: [...coelhoPlugins(pmSchema), ...(pluginsRef.current ?? [])] }),
+        // The application's plugins come first, so one that handles a key
+        // (a suggestion list taking Enter) is asked before the keymap.
+        state: EditorState.create({ doc, plugins: [...(pluginsRef.current ?? []), ...coelhoPlugins(pmSchema)] }),
+        nodeViews: store.constructors(nodeViewsRef.current ?? {}),
         dispatchTransaction,
       });
       setMounted((n) => n + 1);
     },
-    [pmSchema, load],
+    [pmSchema, load, store],
   );
 
   useEffect(() => {
@@ -144,7 +161,8 @@ export function useCoelhoEditor(options: UseCoelhoEditorOptions): CoelhoEditor {
     );
   }, [schema]);
 
-  return { ref, view: viewRef.current, state, pmSchema };
+  const portals = useMemo(() => renderPortals(entries), [entries]);
+  return { ref, view: viewRef.current, state, pmSchema, portals };
 }
 
 function reportInvalid(errors: ValidationError[]): void {
