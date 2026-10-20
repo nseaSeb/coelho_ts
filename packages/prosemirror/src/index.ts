@@ -4,6 +4,7 @@ export {
   addComment,
   commentsPlugin,
   commentsState,
+  relocateComments,
   removeComment,
   selectComment,
   setActiveComment,

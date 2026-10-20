@@ -168,7 +168,7 @@ interface CardProps {
   onCancel: () => void;
 }
 
-function ThreadCard({ thread, active, onSelect, onReply, onResolve, onDelete, onCancel }: CardProps): ReactNode {
+export function ThreadCard({ thread, active, onSelect, onReply, onResolve, onDelete, onCancel }: CardProps): ReactNode {
   const card = useRef<HTMLElement>(null);
   useEffect(() => {
     if (active) card.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });

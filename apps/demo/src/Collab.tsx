@@ -1,8 +1,11 @@
-import { hash, toHtml, type Schema } from "@coelho/core";
-import { collab, FIELD, LocalRelay, seed, snapshot } from "@coelho/collab";
+import { anchorAt, hash, toHtml, type Schema } from "@coelho/core";
+import { collab, FIELD, LocalRelay, seed, sharedThreads, snapshot } from "@coelho/collab";
+import { addComment, commentsPlugin, commentsState, relocateComments, selectComment, setActiveComment } from "@coelho/prosemirror";
 import { Toolbar, useCoelhoEditor } from "@coelho/react";
 import type { Node } from "@coelho/core";
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import type { Command } from "prosemirror-state";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { ThreadCard } from "./Comments.js";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 
@@ -95,18 +98,87 @@ export function Collab({ schema }: { schema: Schema }): ReactNode {
 }
 
 function Pane({ schema, writer, onChange }: { schema: Schema; writer: Writer; onChange: () => void }): ReactNode {
-  // Built once: the setup itself makes fresh plugins for every view.
+  // Built once: the setup itself makes fresh collaboration plugins for every view.
   const [setup] = useState(() => collab({ doc: writer.doc, awareness: writer.awareness }));
-  const editor = useCoelhoEditor({ schema, setup, history: false, onChange });
+  // Threads live in the same shared document as the text, beside it.
+  const [threads] = useState(() => sharedThreads(writer.doc, writer.name));
+  const [plugins] = useState(() => [commentsPlugin({ schema, source: threads.source })]);
+  const editor = useCoelhoEditor({ schema, setup, plugins, history: false, onChange });
+  const view = useRef(editor.view);
+  view.current = editor.view;
+  const [, setVersion] = useState(0);
+
+  const run = (command: Command, focus = false): void => {
+    const current = view.current;
+    if (current === null || current.isDestroyed) return;
+    command(current.state, current.dispatch, current);
+    if (focus) current.focus();
+  };
+
+  // A change to the threads, from anyone, moves no text: the editor is told
+  // to locate them again, once this change is over.
+  useEffect(
+    () =>
+      threads.subscribe(() => {
+        setVersion((n) => n + 1);
+        queueMicrotask(() => run(relocateComments()));
+        onChange();
+      }),
+    [threads],
+  );
+
+  const state = editor.state === null ? undefined : commentsState(editor.state);
+  const active = state?.active ?? null;
+  const list = threads.list();
+
+  // A draft left without a first comment is not a thread.
+  useEffect(() => {
+    for (const thread of list) if (thread.draft && thread.comments.length === 0 && thread.id !== active) threads.remove(thread.id);
+  });
+
+  const open = (): void => {
+    const current = view.current;
+    if (current === null || current.state.selection.empty) return;
+    const { from, to } = current.state.selection;
+    const id = `t_${writer.name.toLowerCase()}_${Date.now().toString(36)}`;
+    threads.open(id, anchorAt(current.state.doc.toJSON(), schema, from, to));
+    run(addComment(id));
+  };
+
   return (
     <div className="pane">
       <div className="pane-name" style={{ borderColor: writer.color }}>
         {writer.name}
       </div>
       <div className="coelho-editor">
-        <Toolbar editor={editor} />
+        <div className="toolbar-row">
+          <Toolbar editor={editor} />
+          <button type="button" className="comment-button" disabled={editor.state?.selection.empty ?? true} onMouseDown={(event) => event.preventDefault()} onClick={open}>
+            Comment
+          </button>
+        </div>
         <div ref={editor.ref} className="coelho-editor-content" />
         {editor.portals}
+      </div>
+      <div className="pane-threads">
+        {list.map((thread) => {
+          const anchor = state?.anchors.get(thread.id) ?? state?.lost.get(thread.id) ?? thread.anchor;
+          return (
+            <ThreadCard
+              key={thread.id}
+              thread={{ ...thread, anchor, orphaned: state !== undefined && !state.anchors.has(thread.id) }}
+              active={thread.id === active}
+              onSelect={() => run(state?.anchors.has(thread.id) ? selectComment(thread.id) : setActiveComment(thread.id), true)}
+              onReply={(body) => threads.reply(thread.id, { id: `c_${Date.now().toString(36)}`, author: writer.name, body, createdAt: new Date().toISOString() })}
+              onResolve={(resolved) => {
+                threads.resolve(thread.id, resolved);
+                if (resolved) run(setActiveComment(null));
+              }}
+              onDelete={() => threads.remove(thread.id)}
+              onCancel={() => run(setActiveComment(null), true)}
+            />
+          );
+        })}
       </div>
     </div>
   );

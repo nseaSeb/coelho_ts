@@ -35,6 +35,7 @@ sits behind the editor. This project separates the two:
 | `@coelho/core` | schema, `validate`, `sanitize`, `canonical`, `hash`, `toHtml`, `toInlineHtml`, `toText`, `toMarkdown`, `isBlank`, trusted/untrusted rendering policy, anchors | `validate`, `canonical`, `hash`, `toHtml` and `toText` byte for byte with coelho's corpus; `sanitize` ported with coelho's own test suite |
 | `@coelho/prosemirror` | coelho schema → ProseMirror `Schema`, editing plugins, anchored comments, suggestion triggers, `fromHtml`, `fromMarkdown`, Markdown paste | working |
 | `@coelho/react` | `<CoelhoEditor>`, `useCoelhoEditor`, default toolbar, React node views, `useSuggestion` and `<SuggestionMenu>` | working |
+| `@coelho/collab` | collaborative editing over Yjs: `seed`, `snapshot`, `collab()`, comment threads on relative positions, shared threads, `LocalRelay` | working |
 
 `apps/demo` (`pnpm --filter coelho-demo dev`, http://localhost:5180) shows
 the editor with anchored comments, and under it everything derived from
@@ -94,6 +95,49 @@ const schema = extendSchema(defaultSchema(), {
   marks: { highlight: { class: "hl", render: ["mark", []] } },
 });
 ```
+
+## Collaboration
+
+Yjs carries every writer's changes and merges them. It is not the
+storage: what is stored is read out of the shared document with
+`snapshot`, validated, and repaired by `sanitize` when a concurrent merge,
+or a peer writing past the editor, left something the schema refuses.
+
+```ts
+const doc = new Y.Doc();
+const awareness = new Awareness(doc);
+if (roomIsEmpty) seed(doc, schema, storedDocument); // once per room, on the server
+
+const setup = collab({ doc, awareness });           // fresh plugins for every view
+useCoelhoEditor({ schema, setup, history: false }); // undo is each writer's own
+
+const { document, errors } = snapshot(doc, schema); // validated, ready to store
+```
+
+The shared document is not a trust boundary. y-prosemirror builds nodes
+without coelho's attribute validators, so a `javascript:` href written
+into it directly reaches every editor (which draws it without its href)
+and never the stored document. In production the snapshot belongs where
+the document is stored, Hocuspocus's `onStoreDocument` for instance.
+
+**Comment threads survive other writers.** y-prosemirror applies a remote
+change by replacing the whole document, which collapses every mapped
+range. With `relativeAnchors()`, a thread is located after such a change
+by Yjs relative positions, which point at items of the shared document:
+text typed before it or inside it, by anyone, keeps it on its words
+(another writer turning *cat* into *chat* leaves it on *chat*, where a
+quote alone would lose it), and its quote is the fallback.
+
+**Threads are shared** with `sharedThreads(doc, author)`: a map beside the
+document in the same Yjs document, a map per thread and an array of
+comments, so replies posted at the same time are both kept. The stored
+document and its hash are the same with or without them.
+
+The demo's second section has two writers, each with their own Y.Doc,
+joined by `LocalRelay` inside the page, with presence, an offline switch,
+shared threads, and what each would store with its hash. y-websocket or
+Hocuspocus (both MIT) do the same over a socket; what Tiptap charges for
+is hosting, not the protocol.
 
 ## Markdown
 
@@ -232,7 +276,7 @@ Node 20+, pnpm 10.
 
 ## Roadmap
 
-Done: the storage layer with parity, `sanitize`, Markdown both ways, the ProseMirror adapter,
+Done: the storage layer with parity, `sanitize`, Markdown both ways, collaboration over Yjs, the ProseMirror adapter,
 the controlled React editor (StrictMode-safe: every jsdom test mounts
 under StrictMode), React node views, suggestions, anchored comments.
 
@@ -241,7 +285,8 @@ under StrictMode), React node views, suggestions, anchored comments.
 2. Node views with editable content (only leaf nodes today).
 3. Comments: render threads on the page (`toHtml` with highlights),
    mentions in comment bodies.
-4. Collaborative editing over Yjs.
+4. Collaboration: a Hocuspocus server example with the snapshot in
+   `onStoreDocument`.
 
 ## License
 

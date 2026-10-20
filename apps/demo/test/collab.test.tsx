@@ -90,4 +90,54 @@ describe("two writers in the demo", () => {
     expect(errors[0]).toContain('scheme "javascript" is not allowed');
     expect(container.querySelector('.stored a[href^="javascript:"]')).toBeNull();
   });
+
+  async function select(pane: HTMLElement, text: string): Promise<void> {
+    const walker = document.createTreeWalker(pane, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      const index = node.textContent?.indexOf(text) ?? -1;
+      if (index === -1) continue;
+      pane.focus();
+      const range = document.createRange();
+      range.setStart(node, index);
+      range.setEnd(node, index + text.length);
+      const selection = document.getSelection() as Selection;
+      selection.removeAllRanges();
+      selection.addRange(range);
+      await act(async () => {
+        document.dispatchEvent(new Event("selectionchange"));
+        await new Promise((resolve) => setTimeout(resolve, 30));
+      });
+      return;
+    }
+    throw new Error(`no ${text}`);
+  }
+
+  test("a thread Camille opens and comments on appears in Sacha's pane, on the same words", async () => {
+    const container = mount();
+    const [camillePane, sachaPane] = [...container.querySelectorAll(".collab .pane")] as HTMLElement[];
+    await select(camillePane!.querySelector(".ProseMirror") as HTMLElement, "Two writers");
+    await act(async () => (camillePane!.querySelector(".comment-button") as HTMLButtonElement).click());
+    // A draft: Sacha sees nothing yet.
+    expect(sachaPane!.querySelectorAll(".thread")).toHaveLength(0);
+
+    const composer = camillePane!.querySelector(".thread.active .comment-editor .ProseMirror") as HTMLElement;
+    await act(async () => {
+      (composer.querySelector("p") as HTMLElement).textContent = "Two, or more?";
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    await act(async () => {
+      (camillePane!.querySelector(".thread.active .composer-actions .primary") as HTMLButtonElement).click();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+
+    const card = sachaPane!.querySelector(".thread");
+    expect(card?.querySelector("blockquote")?.textContent).toContain("Two writers");
+    expect(card?.textContent).toContain("Camille");
+    expect(card?.textContent).toContain("Two, or more?");
+    const highlighted = [...sachaPane!.querySelectorAll(".coelho-comment")].map((span) => span.textContent).join("");
+    expect(highlighted).toBe("Two writers");
+    // Beside the document, never in it: both still store the same document.
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 30)));
+    expect(container.querySelector(".stored .ok")).not.toBeNull();
+  });
 });

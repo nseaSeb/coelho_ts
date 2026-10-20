@@ -31,6 +31,13 @@ export interface AnchorSource {
   locate(state: EditorState, id: string): { from: number; to: number } | null | undefined;
   /** Records a new thread's range, in the state where it was opened. */
   track?(state: EditorState, id: string, from: number, to: number): void;
+  /**
+   * When threads are shared: every thread there is, with what it quoted
+   * and whether it is resolved. Read on every change from elsewhere and on
+   * `relocateComments`, so threads opened, resolved or deleted by others
+   * appear, change and go.
+   */
+  threads?(): Array<{ id: string; anchor: Anchor; resolved: boolean }>;
 }
 
 export interface CommentsPluginOptions {
@@ -60,7 +67,8 @@ type Action =
   | { type: "add"; id: string; from: number; to: number }
   | { type: "remove"; id: string }
   | { type: "activate"; id: string | null }
-  | { type: "resolve"; id: string; resolved: boolean };
+  | { type: "resolve"; id: string; resolved: boolean }
+  | { type: "relocate" };
 
 const key = new PluginKey<CommentsState>("coelho-comments");
 
@@ -75,7 +83,11 @@ export function commentsPlugin(options: CommentsPluginOptions): Plugin<CommentsS
     key,
     state: {
       init: (_config, state) => restore(state.doc, options),
-      apply: (tr, previous, _old, state) => (options.source?.isForeign(tr) ? applyForeign(tr, previous, state, options) : apply(tr, previous, options.schema, state, options.source)),
+      apply: (tr, previous, _old, state) => {
+        const relocate = (tr.getMeta(key) as Action | undefined)?.type === "relocate";
+        if (options.source !== undefined && (relocate || options.source.isForeign(tr))) return applyForeign(tr, previous, state, options);
+        return apply(tr, previous, options.schema, state, options.source);
+      },
     },
     props: {
       decorations: (state) => key.getState(state)?.decorations ?? null,
@@ -110,6 +122,11 @@ export function removeComment(id: string): Command {
 
 export function setActiveComment(id: string | null): Command {
   return meta({ type: "activate", id });
+}
+
+/** Locates every thread again, from the source: for a change to the threads themselves, which moves no text. */
+export function relocateComments(): Command {
+  return meta({ type: "relocate" });
 }
 
 export function setCommentResolved(id: string, resolved: boolean): Command {
@@ -163,8 +180,12 @@ function applyForeign(tr: Transaction, previous: CommentsState, state: EditorSta
   const source = options.source as AnchorSource;
   const anchors = new Map<string, Anchor>();
   const lost = new Map<string, Anchor>();
+  const listed = source.threads?.();
+  const known = (id: string, fallback: Anchor): Anchor => previous.anchors.get(id) ?? previous.lost.get(id) ?? fallback;
+  const entries: Array<[string, Anchor]> = listed === undefined ? [...previous.anchors, ...previous.lost] : listed.map(({ id, anchor }) => [id, known(id, anchor)]);
+  const resolved = listed === undefined ? new Set(previous.resolved) : new Set(listed.filter((thread) => thread.resolved).map((thread) => thread.id));
   let json: CoelhoNode | null = null;
-  for (const [id, anchor] of [...previous.anchors, ...previous.lost]) {
+  for (const [id, anchor] of entries) {
     const located = source.locate(state, id);
     if (located != null && located.from < located.to && located.to <= tr.doc.content.size) {
       anchors.set(id, anchorIn(tr.doc, located.from, located.to));
@@ -176,7 +197,7 @@ function applyForeign(tr: Transaction, previous: CommentsState, state: EditorSta
     else anchors.set(id, anchorIn(tr.doc, found.from, found.to));
   }
   const active = previous.active !== null && (anchors.has(previous.active) || lost.has(previous.active)) ? previous.active : null;
-  return build(tr.doc, anchors, lost, active, new Set(previous.resolved));
+  return build(tr.doc, anchors, lost, active, resolved);
 }
 
 function apply(tr: Transaction, previous: CommentsState, schema: CoelhoSchema, state: EditorState, source?: AnchorSource): CommentsState {
