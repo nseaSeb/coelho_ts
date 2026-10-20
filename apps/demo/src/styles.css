@@ -1,0 +1,74 @@
+:root {
+  --bg: #f6f5f2;
+  --panel: #ffffff;
+  --ink: #1d1c1a;
+  --muted: #6b675f;
+  --line: #e0ddd6;
+  --accent: #b5442c;
+  --ok: #2d7a3e;
+  --code: #f0eee9;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #171614;
+    --panel: #201f1c;
+    --ink: #ece9e2;
+    --muted: #a39e94;
+    --line: #353330;
+    --accent: #e4765c;
+    --ok: #6fc283;
+    --code: #2a2824;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 1200px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 22px; margin: 0 0 16px; }
+h1 span { color: var(--muted); font-weight: 400; font-size: 15px; margin-left: 12px; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; margin: 0; color: var(--muted); }
+header p { margin: 2px 0 10px; font-size: 12px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+
+.coelho-editor { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+.coelho-toolbar { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px; border-bottom: 1px solid var(--line); }
+.coelho-toolbar button {
+  min-width: 32px; height: 28px; padding: 0 8px; border: 1px solid transparent; border-radius: 4px;
+  background: transparent; color: var(--ink); font: inherit; font-size: 13px; cursor: pointer;
+}
+.coelho-toolbar button:hover:not(:disabled) { border-color: var(--line); }
+.coelho-toolbar button[aria-pressed="true"] { background: var(--code); border-color: var(--line); }
+.coelho-toolbar button:disabled { opacity: 0.35; cursor: default; }
+.coelho-toolbar-gap { width: 8px; }
+.coelho-editor-content .ProseMirror { min-height: 220px; padding: 16px 20px; outline: none; }
+.coelho-editor-content .ProseMirror:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); border-radius: 0 0 8px 8px; }
+
+.status { margin: 10px 0 20px; font-size: 13px; }
+.status .ok { color: var(--ok); }
+.errors { color: var(--accent); margin: 0; padding-left: 18px; }
+pre.errors { padding: 8px; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; min-width: 0; }
+pre { margin: 0; padding: 10px; background: var(--code); border-radius: 6px; font: 12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; max-height: 360px; overflow: auto; }
+
+.prose, .ProseMirror { line-height: 1.55; }
+.prose > :first-child, .ProseMirror > :first-child { margin-top: 0; }
+.prose p, .ProseMirror p { margin: 0 0 0.6em; }
+.prose h1, .prose h2, .prose h3, .ProseMirror h1, .ProseMirror h2, .ProseMirror h3 { color: var(--ink); text-transform: none; letter-spacing: 0; margin: 0.4em 0 0.5em; }
+.prose h1, .ProseMirror h1 { font-size: 24px; } .prose h2, .ProseMirror h2 { font-size: 20px; } .prose h3, .ProseMirror h3 { font-size: 17px; }
+.prose blockquote, .ProseMirror blockquote { margin: 0.6em 0; padding-left: 12px; border-left: 3px solid var(--accent); color: var(--muted); }
+.prose pre, .ProseMirror pre { white-space: pre; max-height: none; }
+.prose code, .ProseMirror code { background: var(--code); padding: 1px 4px; border-radius: 3px; font-size: 0.92em; }
+.prose a { color: var(--accent); }
+.prose .hl, .ProseMirror .hl { background: #ffe58a; color: #1d1c1a; }
+.prose hr, .ProseMirror hr { border: 0; border-top: 1px solid var(--line); margin: 1em 0; }
+
+.json-input textarea { width: 100%; min-height: 120px; font: 12.5px/1.45 ui-monospace, Menlo, monospace; background: var(--code); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 8px; resize: vertical; }
+.json-input div { display: flex; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
+.json-input button { font: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); cursor: pointer; }
+.json-input button:hover { border-color: var(--accent); }

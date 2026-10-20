@@ -290,4 +290,16 @@ function fetchMarkSpec(schema: Schema, type: string): MarkSpec {
   return spec;
 }
 
+/**
+ * What a node or mark declared as `render: [tag, attrs]` draws: the tag and
+ * the attribute list, `renderAs` and `class` applied. An editor builds its
+ * `toDOM` from this, so the page and the editor agree. `null` for a render
+ * function, which has no static shape.
+ */
+export function renderDom(node: Node | Mark, spec: NodeSpec | MarkSpec, context: RenderContext = {}): [string, DomAttrs] | null {
+  if (!Array.isArray(spec.render)) return null;
+  const [tagName, attrs] = spec.render;
+  return [resolveTag(tagName, node), elementAttrs(attrs, node, spec, context)];
+}
+
 export { markIndex as _markIndex };
