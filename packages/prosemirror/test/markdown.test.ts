@@ -290,6 +290,10 @@ describe("fromMarkdown", () => {
     expect(inline.filter((node) => node.type === "page_link").map((node) => node.attrs?.name)).toEqual(["cinemas/lyon", "siege"]);
     expect(toText(document, linked)).toContain("[[code]]");
     expect(toText(document, linked)).toContain("[[escaped]]");
+    // A link into a page, to a heading or a block, is a link to the page; one to a heading of this page is no link.
+    const anchored = fromMarkdown("[[siege#Horaires]] [[siege^abc123|bloc]] [[#local]]", linked, { wikiLinks });
+    expect(anchored.content?.[0]?.content?.filter((node) => node.type === "page_link").map((node) => node.attrs?.name)).toEqual(["siege", "siege"]);
+    expect(toText(anchored, linked)).toContain("[[#local]]");
     // A link the schema refuses keeps its words.
     expect(toText(document, linked)).toContain("not [[Bad Name]].");
     // A resolver maps targets as written to names, as a vault's files become pages.

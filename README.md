@@ -150,12 +150,21 @@ opens another page.
   name is a folder: `siege/semaine-42` sits in `siege`.
 - **The vault goes out and comes back.** `GET /api/export` is a ZIP of
   Markdown files, one per page, in their folders, links written as
-  Obsidian writes them (built with what Node ships: deflate and crc32).
+  Obsidian writes them (built with what Node ships: deflate, on zlib's
+  thread pool so a large export does not hold up the WebSockets, and crc32).
   Import takes `.md` files or a vault folder: the browser reads them with
-  `fromMarkdown`, Obsidian's `[[links]]` included and file names made page
-  names; the server revalidates each page and writes it into its room
-  through its own connection, so whoever has it open sees it change. A
-  page exported and imported again stores the same hash.
+  `fromMarkdown`, Obsidian's `[[links]]` included (`#heading` and `^block`
+  suffixes point at the page; a link without a folder finds its note by
+  name, as Obsidian does), properties at the top of a note left out, and
+  a file name kept as the page name when the app accepts it. Before
+  anything is sent, it says which pages will be replaced, which files
+  would land on the same page, and which have no usable name. The server
+  checks the session before reading the body, revalidates each page and
+  writes it into its room through its own connection, so whoever has it
+  open sees it change; a page that fails is reported and the others go
+  on. A page exported and imported again stores the same hash, accented
+  names included. File names in the archive are UTF-8, which the Finder
+  and every current unzip read; the `unzip` macOS ships does not.
 - **Search** as you type, every word a prefix, over a generated `tsvector`
   with a GIN index; matches come back marked with control characters, not
   HTML, since the text is the writers'.

@@ -1,18 +1,23 @@
-import { crc32, deflateRawSync } from "node:zlib";
+import { promisify } from "node:util";
+import { crc32, deflateRaw } from "node:zlib";
+
+const deflate = promisify(deflateRaw);
 
 /**
  * A ZIP archive of files, built in memory with what Node ships: deflate for
  * the data, crc32 for the checksums. Enough for a vault of Markdown pages;
  * not a general archiver (no ZIP64, so under 4 GB and 65,535 files).
  */
-export function zip(files: Array<{ path: string; data: Buffer }>): Buffer {
+export async function zip(files: Array<{ path: string; data: Buffer }>): Promise<Buffer> {
   const locals: Buffer[] = [];
   const centrals: Buffer[] = [];
   let offset = 0;
   const { time, date } = dosTime(new Date());
   for (const { path, data } of files) {
     const name = Buffer.from(path, "utf8");
-    const compressed = deflateRawSync(data);
+    // On zlib's thread pool, one file at a time: building a large vault
+    // does not hold up the event loop every WebSocket is served from.
+    const compressed = await deflate(data);
     const checksum = crc32(data);
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0); // local file header

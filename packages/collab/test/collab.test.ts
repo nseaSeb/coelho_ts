@@ -7,7 +7,7 @@ import { undoCommand } from "y-prosemirror";
 import { Awareness } from "y-protocols/awareness";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import * as Y from "yjs";
-import { collab, FIELD, LocalRelay, seed, snapshot } from "../src/index.js";
+import { collab, FIELD, LocalRelay, replace, seed, snapshot } from "../src/index.js";
 
 const schema = defaultSchema();
 const pm = proseMirrorSchemaFor(schema);
@@ -137,4 +137,18 @@ describe("collaboration", () => {
     expect(stored.errors.map((error) => error.message)).toEqual(['scheme "javascript" is not allowed']);
     expect(toHtml(stored.document, schema)).toBe("<p>The cat sat.</p><p>On the mat.</p>");
   });
+
+  test("replace writes a stored document over the shared one, repaired, and every writer sees it", () => {
+    const relay = new LocalRelay();
+    const camille = writer(relay, "Camille", true);
+    const sacha = writer(relay, "Sacha");
+    const written = replace(camille.doc, schema, {
+      type: "doc",
+      content: [{ type: "script" }, { type: "paragraph", content: [{ type: "text", text: "Replaced." }] }],
+    });
+    expect(written).toEqual({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Replaced." }] }] });
+    expect(sacha.view.state.doc.textContent).toBe("Replaced.");
+    expect(snapshot(sacha.doc, schema)).toEqual({ document: written, errors: [] });
+  });
 });
+

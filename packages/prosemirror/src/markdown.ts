@@ -104,7 +104,8 @@ markdownIt.inline.ruler.before("link", "coelho_wikilink", (state, silent) => {
   if (end === -1) return false;
   const inner = state.src.slice(state.pos + 2, end);
   if (inner.includes("\n") || inner.includes("[")) return false;
-  const written = (inner.split("|")[0] ?? "").trim();
+  // `[[page#heading]]` and `[[page^block]]` point into a page: the link is to the page.
+  const written = ((inner.split("|")[0] ?? "").split(/[#^]/)[0] ?? "").trim();
   const target = written === "" ? "" : (wikiLinks.resolve?.(written) ?? written);
   if (target === "") return false;
   if (!silent) {

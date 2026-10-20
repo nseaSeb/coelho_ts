@@ -155,11 +155,17 @@ function wordsOf(query: string): string[] {
   return (query.match(/[\p{L}\p{N}]+/gu) ?? []).slice(0, 8);
 }
 
-/** Some words around the first match, matches marked as the Postgres store marks them. */
-function snippetOf(text: string, words: string[]): string {
+/**
+ * Some words around the first match, matches marked as the Postgres store
+ * marks them. A match is a word starting with one of the query's words, as
+ * the search itself reads them; when the match is in the page's name only,
+ * the snippet is the start of its text.
+ */
+export function snippetOf(text: string, words: string[]): string {
   const flat = text.replace(/\s+/g, " ");
-  const lower = flat.toLowerCase();
-  const at = Math.max(0, Math.min(...words.map((word) => lower.indexOf(word)).filter((index) => index >= 0)));
-  const piece = flat.slice(Math.max(0, at - 40), at + 80);
-  return piece.replace(new RegExp(`(?<![\\p{L}\\p{N}])(${words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})[\\p{L}\\p{N}]*`, "giu"), (match) => `\u0001${match}\u0002`);
+  const escaped = words.map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}])(?:${escaped.join("|")})[\\p{L}\\p{N}]*`, "giu");
+  const at = pattern.exec(flat)?.index ?? 0;
+  pattern.lastIndex = 0;
+  return flat.slice(Math.max(0, at - 40), at + 80).replace(pattern, (match) => `\u0001${match}\u0002`);
 }

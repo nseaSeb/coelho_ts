@@ -1,7 +1,5 @@
-import { FIELD, seed, snapshot } from "@nseaprotector/coelho-collab";
-import { hash, sanitize, toMarkdown, toText, validate, type Node } from "@nseaprotector/coelho-core";
-import { proseMirrorSchemaFor } from "@nseaprotector/coelho-prosemirror";
-import { prosemirrorJSONToYXmlFragment } from "y-prosemirror";
+import { FIELD, replace, seed, snapshot } from "@nseaprotector/coelho-collab";
+import { hash, toMarkdown, toText, validate } from "@nseaprotector/coelho-core";
 import { Database } from "@hocuspocus/extension-database";
 import { Server, type Extension } from "@hocuspocus/server";
 import express from "express";
@@ -71,8 +69,9 @@ export function createNotesServer(options: NotesServerOptions): Server {
   // Hocuspocus only stores after a change from a client.
   const seeding: Extension = {
     priority: 50,
-    async onLoadDocument({ document, documentName }) {
-      if (document.getXmlFragment(FIELD).length > 0) return;
+    async onLoadDocument({ document, documentName, context }) {
+      // An import writes the page itself: seeding it first would only be overwritten.
+      if (document.getXmlFragment(FIELD).length > 0 || (context as { importing?: boolean } | undefined)?.importing) return;
       seed(document, schema, firstPage(documentName));
       await persist(documentName, document, Y.encodeStateAsUpdate(document), null);
     },
@@ -119,7 +118,7 @@ export function createNotesServer(options: NotesServerOptions): Server {
     }));
     response.setHeader("Content-Type", "application/zip");
     response.setHeader("Content-Disposition", 'attachment; filename="coelho-notes.zip"');
-    response.end(zip(files));
+    response.end(await zip(files));
   });
 
   app.get("/api/search", async (request, response) => {
@@ -130,33 +129,44 @@ export function createNotesServer(options: NotesServerOptions): Server {
   // needs. Each is a claim, revalidated here, and written into its room
   // through the server's own connection: whoever has it open sees it
   // change, and it is stored as anyone's change is, under who imported it.
-  app.post("/api/import", express.json({ limit: "8mb" }), async (request, response) => {
+  // The session is checked before the body, the only large one, is read.
+  const editorOnly: express.RequestHandler = async (request, response, next) => {
     const user = await userFrom(accounts, request.headers.cookie);
     if (user === null) return void response.status(401).json({ error: "sign in first" });
     if (user.role === "reader") return void response.status(403).json({ error: "readers cannot import" });
+    response.locals.user = user;
+    next();
+  };
+  app.post("/api/import", editorOnly, express.json({ limit: "8mb" }), async (request, response) => {
+    const user = response.locals.user as User;
     const pages = (request.body as { pages?: unknown })?.pages;
     if (!Array.isArray(pages) || pages.length > 500) return void response.status(400).json({ error: "pages: a list of at most 500 { name, document }" });
     const imported: string[] = [];
     const repaired: string[] = [];
     const refused: string[] = [];
-    const pmSchema = proseMirrorSchemaFor(schema);
+    const failed: string[] = [];
     for (const entry of pages as Array<{ name?: unknown; document?: unknown }>) {
       if (!isPageName(entry?.name)) {
         refused.push(String(entry?.name ?? ""));
         continue;
       }
-      const checked = validate(entry.document, schema);
-      const document: Node = checked.ok ? checked.document : sanitize(entry.document, schema);
-      if (!checked.ok) repaired.push(entry.name);
-      const connection = await server.hocuspocus.openDirectConnection(entry.name, { user });
+      const name = entry.name;
+      // One page failing is reported, and does not stop the others.
       try {
-        await connection.transact((shared) => prosemirrorJSONToYXmlFragment(pmSchema, document, shared.getXmlFragment(FIELD)));
-      } finally {
-        await connection.disconnect();
+        const checked = validate(entry.document, schema);
+        const connection = await server.hocuspocus.openDirectConnection(name, { user, importing: true });
+        try {
+          await connection.transact((shared) => replace(shared, schema, entry.document));
+        } finally {
+          await connection.disconnect();
+        }
+        imported.push(name);
+        if (!checked.ok) repaired.push(name);
+      } catch {
+        failed.push(name);
       }
-      imported.push(entry.name);
     }
-    response.json({ imported, repaired, refused });
+    response.json({ imported, repaired, refused, failed });
   });
 
   app.get("/api/pages/:name/backlinks", async (request, response) => {

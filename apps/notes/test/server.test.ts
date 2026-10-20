@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import * as Y from "yjs";
 import { memoryAccounts } from "../server/accounts.js";
 import { createNotesServer } from "../server/app.js";
@@ -302,7 +302,7 @@ describe("the vault", () => {
     ];
     expect((await call(http, "/api/import", { body: { pages }, cookie: reader })).status).toBe(403);
     const result = (await (await call(http, "/api/import", { body: { pages }, cookie: admin })).json()) as Record<string, string[]>;
-    expect(result).toEqual({ imported: ["imported", "hostile"], repaired: ["hostile"], refused: ["../nope"] });
+    expect(result).toEqual({ imported: ["imported", "hostile"], repaired: ["hostile"], refused: ["../nope"], failed: [] });
     // The page open in an editor changed under it, and was stored under who imported it.
     await until(() => textOf(watching).includes("From the vault."));
     expect(watching.document.getXmlFragment(FIELD).length).toBe(1);
@@ -310,6 +310,36 @@ describe("the vault", () => {
     expect((await store.get("imported"))?.updatedBy).toBe("Camille");
     await until(async () => (await store.get("hostile"))?.text === "kept");
     expect(JSON.stringify((await store.get("hostile"))?.body)).not.toContain("javascript");
+  });
+
+  test("reports a page that fails to import, and goes on with the others", async () => {
+    const { server, http, store } = await start();
+    const cookie = await signUp(http, "Camille");
+    const open = server.hocuspocus.openDirectConnection.bind(server.hocuspocus);
+    vi.spyOn(server.hocuspocus, "openDirectConnection").mockImplementation((name, context) => (name === "boom" ? Promise.reject(new Error("boom")) : open(name, context)));
+    const page = (name: string) => ({ name, document: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: name }] }] } });
+    const result = (await (await call(http, "/api/import", { body: { pages: [page("one"), page("boom"), page("two")] }, cookie })).json()) as Record<string, string[]>;
+    expect(result).toEqual({ imported: ["one", "two"], repaired: [], refused: [], failed: ["boom"] });
+    await until(async () => (await store.get("two"))?.text === "two");
+  });
+
+  test("an import is not even read without a session", async () => {
+    const { http } = await start();
+    const big = JSON.stringify({ pages: [{ name: "x", document: { type: "doc", padding: "x".repeat(9_000_000) } }] });
+    const response = await fetch(`${http}/api/import`, { method: "POST", headers: { "content-type": "application/json" }, body: big });
+    expect(response.status).toBe(401);
+  });
+
+  test("an imported page is written as given, never seeded first", async () => {
+    const saved: string[] = [];
+    const memory = memoryStore();
+    const { http, store } = await start({ ...memory, save: async (page, state) => (saved.push(page.text), memory.save(page, state)) });
+    const cookie = await signUp(http, "Camille");
+    const document = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Only this." }] }] };
+    await call(http, "/api/import", { body: { pages: [{ name: "fresh", document }] }, cookie });
+    await until(async () => (await store.get("fresh"))?.text === "Only this.");
+    expect((await store.get("fresh"))?.updatedBy).toBe("Camille");
+    expect(saved.some((text) => text.includes("Everyone with this page open"))).toBe(false);
   });
 
   test("is searched by words, each the start of a word, and snippets are text, not HTML", async () => {

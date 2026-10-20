@@ -40,6 +40,18 @@ export function seed(doc: Y.Doc, schema: CoelhoSchema, document: unknown, field 
   prosemirrorJSONToYXmlFragment(proseMirrorSchemaFor(schema), sanitize(document, schema), fragment);
 }
 
+/**
+ * Replaces what a shared document holds with a stored document, repaired
+ * by `sanitize` first, in one transaction: every writer connected sees the
+ * new content arrive, as any other writer's change. What an import does.
+ * Returns what was written.
+ */
+export function replace(doc: Y.Doc, schema: CoelhoSchema, document: unknown, field = FIELD): Document {
+  const clean = sanitize(document, schema);
+  doc.transact(() => prosemirrorJSONToYXmlFragment(proseMirrorSchemaFor(schema), clean, doc.getXmlFragment(field)));
+  return clean;
+}
+
 export interface Snapshot {
   document: Document;
   /** What did not validate, and was repaired by `sanitize`; empty when the shared document was valid. */

@@ -51,7 +51,9 @@ export function authRoutes(options: AuthOptions): express.Router {
 
   // Every request that changes something carries JSON. A form posted from
   // another site cannot, and the cookie is SameSite=Lax besides.
-  router.use(["/api/signup", "/api/login", "/api/logout", "/api/users"], express.json({ limit: "16kb" }));
+  // Small JSON everywhere; the import parses its own, larger, once the session is checked.
+  const json = express.json({ limit: "16kb" });
+  router.use((request, response, next) => (request.path === "/api/import" ? next() : json(request, response, next)));
   router.use((request, response, next) => {
     if (["POST", "PATCH", "PUT", "DELETE"].includes(request.method) && !request.is("application/json")) {
       response.status(415).json({ error: "send JSON" });
