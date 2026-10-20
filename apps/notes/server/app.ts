@@ -5,7 +5,7 @@ import { Server, type Extension } from "@hocuspocus/server";
 import express from "express";
 import { existsSync } from "node:fs";
 import * as Y from "yjs";
-import { firstPage, schema } from "./schema.js";
+import { firstPage, isPageName, linksOf, schema } from "./schema.js";
 import type { AccountStore, Role, User } from "./accounts.js";
 import { authRoutes, colorOf, userFrom } from "./auth.js";
 import type { DocumentStore } from "./store.js";
@@ -38,16 +38,18 @@ export function createNotesServer(options: NotesServerOptions): Server {
   const { accounts } = options;
   const persist = async (name: string, document: Y.Doc, state: Uint8Array, by: User | null): Promise<void> => {
     const { document: body, errors } = snapshot(document, schema);
-    await store.save({ name, body, hash: await hash(body), text: toText(body, schema), errors, updatedBy: by?.name ?? null }, state);
+    await store.save({ name, body, hash: await hash(body), text: toText(body, schema), errors, updatedBy: by?.name ?? null, links: linksOf(body) }, state);
   };
 
   // Every connection is someone signed in. A reader's connection is read
   // only on the server, where a modified client cannot lift it.
   const authentication: Extension = {
     priority: 200,
-    async onAuthenticate({ requestHeaders, connectionConfig }) {
+    async onAuthenticate({ requestHeaders, connectionConfig, documentName }) {
       const user = await userFrom(accounts, requestHeaders.get("cookie"));
       if (user === null) throw new Error("sign in first");
+      // A room is a page, and a page has a name a link can hold.
+      if (!isPageName(documentName)) throw new Error("not a page name");
       if (user.role === "reader") connectionConfig.readOnly = true;
       return { user };
     },
@@ -104,6 +106,9 @@ export function createNotesServer(options: NotesServerOptions): Server {
   });
   app.get("/api/pages", async (_request, response) => {
     response.json(await store.list());
+  });
+  app.get("/api/pages/:name/backlinks", async (request, response) => {
+    response.json(await store.backlinks(request.params.name));
   });
   app.get("/api/pages/:name", async (request, response) => {
     const page = await store.get(request.params.name);

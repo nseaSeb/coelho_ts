@@ -228,3 +228,43 @@ describe("who is connected", () => {
     expect(names).not.toContain("Camille");
   });
 });
+
+/** A link to another page, written into the shared document as the editor writes it. */
+function link(provider: HocuspocusProvider, name: string): void {
+  const paragraph = provider.document.getXmlFragment(FIELD).get(1) as Y.XmlElement;
+  const element = new Y.XmlElement("page_link");
+  element.setAttribute("name", name);
+  paragraph.insert(paragraph.length, [element]);
+}
+
+describe("links between pages", () => {
+  test("are stored with the page, and a page knows who links to it", async () => {
+    const { url, http, store } = await start();
+    const cookie = await signUp(http, "Camille");
+    const a = await open(url, "siege/programme", cookie);
+    link(a, "cinemas/lyon");
+    link(a, "cinemas/lyon");
+    await until(async () => ((await store.get("siege/programme"))?.links.length ?? 0) > 0);
+    expect((await store.get("siege/programme"))?.links).toEqual(["cinemas/lyon"]);
+    const response = await call(http, `/api/pages/${encodeURIComponent("cinemas/lyon")}/backlinks`, { cookie });
+    expect(((await response.json()) as Array<{ name: string }>).map((page) => page.name)).toEqual(["siege/programme"]);
+    expect(toHtml((await store.get("siege/programme"))!.body, schema)).toContain('<a class="page-link" href="#cinemas%2Flyon">cinemas/lyon</a>');
+  });
+
+  test("to something that is not a page name are not links: repaired before they are stored", async () => {
+    const { url, http, store } = await start();
+    const mallory = await open(url, "page", await signUp(http, "Mallory"));
+    link(mallory, "javascript:alert(1)");
+    await until(async () => ((await store.get("page"))?.errors.length ?? 0) > 0);
+    const stored = await store.get("page");
+    expect(stored?.errors.map((error) => error.message)).toEqual(["must be a page name"]);
+    expect(stored?.links).toEqual([]);
+    expect(JSON.stringify(stored?.body)).not.toContain("javascript");
+  });
+
+  test("a room whose name is not a page name is refused", async () => {
+    const { url, http } = await start();
+    await expect(open(url, "../etc/passwd", await signUp(http, "Camille"))).rejects.toThrow(/refused/);
+  });
+});
+

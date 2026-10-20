@@ -141,6 +141,13 @@ opens another page.
   account's, whatever a client claims; each stored page records who last
   changed it. `SIGNUP=closed` closes sign-up, `DEFAULT_ROLE` sets the
   role of new accounts.
+- **Pages link to pages.** `[[` in the editor lists the pages, or offers to
+  create one; the link is a node of the schema (`page_link`), its name held
+  to what a page name can be, so a hostile one is repaired like any other
+  attribute. The server derives each page's links from the validated body
+  when it stores it (a `text[]` column with a GIN index), and
+  `GET /api/pages/:name/backlinks` answers who links to a page. A `/` in a
+  name is a folder: `siege/semaine-42` sits in `siege`.
 - HTTP and WebSockets share one port: `GET /api/pages` and
   `GET /api/pages/:name` return what is stored; the side panel of the app
   shows it, read back from the server.
@@ -396,8 +403,7 @@ under StrictMode), React node views, suggestions, anchored comments.
 2. Node views with editable content (only leaf nodes today).
 3. Comments: render threads on the page (`toHtml` with highlights),
    mentions in comment bodies.
-4. coelho notes: a page tree, `[[links]]` and backlinks, then a
-   Markdown vault export and import, and search.
+4. coelho notes: a Markdown vault export and import, and search.
 
 ## License
 
