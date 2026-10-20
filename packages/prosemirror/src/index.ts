@@ -8,6 +8,7 @@ export {
   selectComment,
   setActiveComment,
   setCommentResolved,
+  type AnchorSource,
   type CommentsPluginOptions,
   type CommentsState,
   type StoredAnchor,

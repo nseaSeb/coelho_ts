@@ -17,9 +17,27 @@ export interface StoredAnchor {
   lost?: boolean;
 }
 
+/**
+ * Where threads are when ranges cannot be mapped. A collaborative binding
+ * replaces the whole document on every remote change, which collapses
+ * every mapped range; a source that knows where each thread points in the
+ * shared document (`@coelho/collab`'s Yjs relative positions) puts them
+ * back. What it cannot place is looked for by its quote.
+ */
+export interface AnchorSource {
+  /** Whether this transaction came from elsewhere, so ranges are to be located rather than mapped. */
+  isForeign(tr: Transaction): boolean;
+  /** Where a thread is now; `null` when its text is gone, `undefined` when the source has no record of it. */
+  locate(state: EditorState, id: string): { from: number; to: number } | null | undefined;
+  /** Records a new thread's range, in the state where it was opened. */
+  track?(state: EditorState, id: string, from: number, to: number): void;
+}
+
 export interface CommentsPluginOptions {
   /** The coelho schema of the document, used to find a quote again in a document that changed. */
   schema: CoelhoSchema;
+  /** For collaborative editing: where threads are after a change from another writer. */
+  source?: AnchorSource;
   /**
    * The anchors to restore whenever the editor state is created: on mount,
    * and when a controlled editor is reset to a document it did not
@@ -57,7 +75,7 @@ export function commentsPlugin(options: CommentsPluginOptions): Plugin<CommentsS
     key,
     state: {
       init: (_config, state) => restore(state.doc, options),
-      apply: (tr, previous) => apply(tr, previous, options.schema),
+      apply: (tr, previous, _old, state) => (options.source?.isForeign(tr) ? applyForeign(tr, previous, state, options) : apply(tr, previous, options.schema, state, options.source)),
     },
     props: {
       decorations: (state) => key.getState(state)?.decorations ?? null,
@@ -136,7 +154,32 @@ function restore(doc: Node, options: CommentsPluginOptions): CommentsState {
   return build(doc, anchors, lost, null, resolved);
 }
 
-function apply(tr: Transaction, previous: CommentsState, schema: CoelhoSchema): CommentsState {
+/**
+ * A change from another writer: every range is located again — by the
+ * source, or by its quote and context when the source cannot place it —
+ * instead of being mapped through a replacement of the whole document.
+ */
+function applyForeign(tr: Transaction, previous: CommentsState, state: EditorState, options: CommentsPluginOptions): CommentsState {
+  const source = options.source as AnchorSource;
+  const anchors = new Map<string, Anchor>();
+  const lost = new Map<string, Anchor>();
+  let json: CoelhoNode | null = null;
+  for (const [id, anchor] of [...previous.anchors, ...previous.lost]) {
+    const located = source.locate(state, id);
+    if (located != null && located.from < located.to && located.to <= tr.doc.content.size) {
+      anchors.set(id, anchorIn(tr.doc, located.from, located.to));
+      continue;
+    }
+    json ??= tr.doc.toJSON() as CoelhoNode;
+    const found = reanchor(json, options.schema, anchor, { requireContext: true });
+    if (found === null) lost.set(id, anchor);
+    else anchors.set(id, anchorIn(tr.doc, found.from, found.to));
+  }
+  const active = previous.active !== null && (anchors.has(previous.active) || lost.has(previous.active)) ? previous.active : null;
+  return build(tr.doc, anchors, lost, active, new Set(previous.resolved));
+}
+
+function apply(tr: Transaction, previous: CommentsState, schema: CoelhoSchema, state: EditorState, source?: AnchorSource): CommentsState {
   const action = tr.getMeta(key) as Action | undefined;
   if (!tr.docChanged && action === undefined) return previous;
 
@@ -158,6 +201,7 @@ function apply(tr: Transaction, previous: CommentsState, schema: CoelhoSchema): 
 
   if (action?.type === "add") {
     ranges.set(action.id, { from: action.from, to: action.to });
+    source?.track?.(state, action.id, action.from, action.to);
     lost.delete(action.id);
     active = action.id;
   } else if (action?.type === "remove") {
