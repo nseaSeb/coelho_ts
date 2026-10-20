@@ -485,3 +485,83 @@ describe("a page's history", () => {
   });
 });
 
+describe("comment threads", () => {
+  const range = { from: { type: null, tname: "coelho", item: null, assoc: 0 }, to: { type: null, tname: "coelho", item: null, assoc: 0 }, last: { type: null, tname: "coelho", item: null, assoc: 0 } };
+  const body = (text: string): unknown => ({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text }] }] });
+  type Listed = { id: string; resolved: boolean; anchor: { quote: string }; comments: Array<{ author: string; body: unknown }> };
+
+  /** The threads room as a client reads it. */
+  function threadsOf(provider: HocuspocusProvider): Listed[] {
+    const map = provider.document.getMap<Y.Map<unknown>>("coelho-threads");
+    return [...map.entries()].map(([id, entry]) => ({
+      id,
+      resolved: entry.get("resolved") === true,
+      anchor: { quote: String(entry.get("quote")) },
+      comments: ((entry.get("comments") as Y.Array<{ author: string; body: unknown }> | undefined)?.toArray() ?? []),
+    }));
+  }
+
+  test("are opened through the server, under the account's name, and reach every reader of the page live", async () => {
+    const { url, http, store } = await start();
+    const ada = await signUp(http, "Ada");
+    const lin = await signUp(http, "Lin");
+    const watching = await open(url, "page::threads", lin);
+    const created = await call(http, "/api/pages/page/threads", { body: { anchor: { quote: "Everyone" }, range, body: { ...(body("Who is everyone?") as object), author: "Mallory" } }, cookie: ada });
+    expect(created.status).toBe(201);
+    const { id } = (await created.json()) as { id: string };
+    await until(() => threadsOf(watching).length === 1);
+    expect(threadsOf(watching)[0]).toMatchObject({ id, resolved: false, anchor: { quote: "Everyone" }, comments: [{ author: "Ada", body: body("Who is everyone?") }] });
+    // A reader may comment: commenting is not editing.
+    expect((await call(http, `/api/pages/page/threads/${id}/comments`, { body: { body: body("Us.") }, cookie: lin })).status).toBe(201);
+    await until(() => threadsOf(watching)[0]?.comments.length === 2);
+    expect(threadsOf(watching)[0]?.comments.map((c) => c.author)).toEqual(["Ada", "Lin"]);
+    await until(async () => (await store.threads("page")).length === 1);
+    expect(((await (await call(http, "/api/pages/page/threads", { cookie: ada })).json()) as Listed[])[0]?.comments).toHaveLength(2);
+  });
+
+  test("are read only to every client: what one writes into the room reaches nobody", async () => {
+    const { url, http } = await start();
+    const ada = await signUp(http, "Ada");
+    const mallory = await open(url, "page::threads", ada);
+    const watching = await open(url, "page::threads", await signUp(http, "Lin"));
+    const forged = new Y.Map<unknown>();
+    mallory.document.getMap("coelho-threads").set("forged", forged);
+    forged.set("quote", "x");
+    await call(http, "/api/pages/page/threads", { body: { anchor: { quote: "real" }, range, body: body("Real.") }, cookie: ada });
+    await until(() => threadsOf(watching).length === 1);
+    expect(threadsOf(watching).map((t) => t.anchor.quote)).toEqual(["real"]);
+  });
+
+  test("bodies are repaired under the comment schema, and an empty one is refused", async () => {
+    const { url, http } = await start();
+    const ada = await signUp(http, "Ada");
+    const watching = await open(url, "page::threads", ada);
+    const hostile = { type: "doc", content: [{ type: "heading", content: [{ type: "text", text: "Big" }] }, { type: "paragraph", content: [{ type: "text", text: "click", marks: [{ type: "link", attrs: { href: "javascript:alert(1)" } }] }] }] };
+    expect((await call(http, "/api/pages/page/threads", { body: { anchor: { quote: "q" }, range, body: hostile }, cookie: ada })).status).toBe(201);
+    await until(() => threadsOf(watching).length === 1);
+    expect(threadsOf(watching)[0]?.comments[0]?.body).toEqual(body("click"));
+    expect((await call(http, "/api/pages/page/threads", { body: { anchor: { quote: "q" }, range, body: { type: "doc", content: [{ type: "paragraph" }] } }, cookie: ada })).status).toBe(400);
+    expect((await call(http, "/api/pages/page/threads", { body: { anchor: { quote: "q" }, range: { from: "nowhere" }, body: body("x") }, cookie: ada })).status).toBe(400);
+  });
+
+  test("are resolved or deleted by their author, an editor or an admin, and nobody else", async () => {
+    const { url, http } = await start();
+    const ada = await signUp(http, "Ada");
+    const lin = await signUp(http, "Lin");
+    const sam = await signUp(http, "Sam");
+    const watching = await open(url, "page::threads", ada);
+    const { id } = (await (await call(http, "/api/pages/page/threads", { body: { anchor: { quote: "q" }, range, body: body("Lin's.") }, cookie: lin })).json()) as { id: string };
+    expect((await call(http, `/api/pages/page/threads/${id}`, { method: "PATCH", body: { resolved: true }, cookie: sam })).status).toBe(403);
+    expect((await call(http, `/api/pages/page/threads/${id}`, { method: "PATCH", body: { resolved: true }, cookie: lin })).status).toBe(200);
+    await until(() => threadsOf(watching)[0]?.resolved === true);
+    expect((await call(http, `/api/pages/page/threads/${id}`, { method: "DELETE", body: {}, cookie: sam })).status).toBe(403);
+    expect((await call(http, `/api/pages/page/threads/${id}`, { method: "DELETE", body: {}, cookie: ada })).status).toBe(204);
+    await until(() => threadsOf(watching).length === 0);
+  });
+
+  test("a threads room is only a page's: one for something else is refused", async () => {
+    const { url, http } = await start();
+    await expect(open(url, "../x::threads", await signUp(http, "Ada"))).rejects.toThrow(/refused/);
+  });
+});
+

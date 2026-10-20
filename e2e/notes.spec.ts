@@ -29,6 +29,26 @@ async function account(browser: Browser, name: string, email: string): Promise<P
 
 const editor = (page: Page) => page.locator(".coelho-editor-content .ProseMirror");
 
+/** Selects the first occurrence of `text` in the editor, as a drag over it would. */
+async function selectText(page: Page, text: string): Promise<void> {
+  await editor(page).evaluate((root, wanted) => {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      const at = node.textContent?.indexOf(wanted) ?? -1;
+      if (at === -1) continue;
+      (root as HTMLElement).focus();
+      const range = document.createRange();
+      range.setStart(node, at);
+      range.setEnd(node, at + wanted.length);
+      getSelection()?.removeAllRanges();
+      getSelection()?.addRange(range);
+      return;
+    }
+    throw new Error(`no ${wanted}`);
+  }, text);
+  await settle(page);
+}
+
 async function typeAtEnd(page: Page, text: string): Promise<void> {
   await editor(page).locator("p").first().click();
   await page.keyboard.press(LINE_END);
@@ -104,5 +124,45 @@ test("a page's history: what a version changed, and bringing it back for everyon
   await expect(editor(page)).not.toContainText("A temporary line.");
   await expect(versions).toHaveCount(3);
   await expect(versions.first()).toContainText("restored from #");
+});
+
+test("comments: written through the server under each account, seen live by a reader who can answer", async ({ browser }, testInfo) => {
+  const attempt = `${testInfo.repeatEachIndex}${testInfo.retry}`;
+  const ada = await account(browser, "Ada", "ada@example.test");
+  const name = `talk-${attempt}`;
+  await ada.goto(`/#${name}`);
+  await expect(editor(ada).locator("h1")).toHaveText(name);
+  const lin = await account(browser, `Reader${attempt}`, `reader-${attempt}@example.test`);
+  await lin.goto(`/#${name}`);
+  await expect(editor(lin).locator("h1")).toHaveText(name);
+
+  // Ada comments on a word.
+  await selectText(ada, "Everyone");
+  await ada.getByRole("button", { name: "Comment", exact: true }).click();
+  await ada.getByLabel("Comment", { exact: true }).fill("Who is everyone?");
+  await ada.getByRole("button", { name: "Comment", exact: true }).last().click();
+
+  // The reader sees the word highlighted and the comment, under Ada's name.
+  await expect(editor(lin).locator(".coelho-comment")).toHaveText("Everyone");
+  await lin.getByRole("tab", { name: "Comments" }).click();
+  const thread = lin.locator(".comments .thread").first();
+  await expect(thread.locator(".comment")).toHaveCount(1);
+  await expect(thread.locator(".comment strong")).toHaveText("Ada");
+  await expect(thread.locator(".comment .body")).toHaveText("Who is everyone?");
+
+  // A reader may answer, not manage the thread.
+  await thread.click();
+  await lin.getByLabel("Reply").fill("All of us.");
+  await lin.getByRole("button", { name: "Reply" }).click();
+  await expect(thread.locator(".comment")).toHaveCount(2);
+  await expect(lin.getByRole("button", { name: "Resolve" })).toHaveCount(0);
+
+  // Ada sees the answer, and resolves the thread for everyone.
+  await ada.getByRole("tab", { name: "Comments" }).click();
+  const hers = ada.locator(".comments .thread").first();
+  await expect(hers.locator(".comment strong")).toHaveText(["Ada", `Reader${attempt}`]);
+  await hers.click();
+  await ada.getByRole("button", { name: "Resolve" }).click();
+  await expect(lin.locator(".resolved-threads summary")).toHaveText("Resolved (1)");
 });
 

@@ -1,4 +1,4 @@
-import { defaultSchema, escape, extendSchema, tag, type Node } from "@nseaprotector/coelho-core";
+import { defineSchema, defaultSchema, escape, extendSchema, tag, type Node } from "@nseaprotector/coelho-core";
 
 /**
  * A page name: letters, digits and `-_.`, with `/` for folders, as
@@ -61,4 +61,42 @@ export function firstPage(name: string): Node {
       },
     ],
   };
+}
+
+/**
+ * What a comment may hold: paragraphs, line breaks, bold, italic, code and
+ * links. Small on purpose, and rendered as a stranger's text all the same.
+ */
+export const commentSchema = defineSchema({
+  limits: { maxTextLength: 5000, maxNodes: 500 },
+  nodes: {
+    doc: { content: "paragraph+" },
+    paragraph: { content: "inline*", group: "block", render: ["p", []], parse: ["p"] },
+    hard_break: { group: "inline", inline: true, void: true, render: ["br", []], toText: "\n", parse: ["br"] },
+    text: { group: "inline", inline: true, text: true },
+  },
+  marks: {
+    bold: { render: ["strong", []], parse: ["strong", "b"] },
+    italic: { render: ["em", []], parse: ["em", "i"] },
+    code: { code: true, render: ["code", []], parse: ["code"] },
+    link: { attrs: { href: { required: true, validate: "safe_url" } }, render: ["a", (mark) => [["href", String(mark.attrs?.href ?? "")]]], parse: ["a"] },
+  },
+});
+
+/**
+ * The room a page's comment threads live in, beside the page's own. Every
+ * client reads it and none writes to it: the server does, for whoever is
+ * signed in, so a comment's author is the account that posted it.
+ */
+export const THREADS_ROOM = "::threads";
+
+export function threadsRoomOf(name: string): string {
+  return `${name}${THREADS_ROOM}`;
+}
+
+/** The page a threads room belongs to, or `null` for a room that is not one. */
+export function pageOfThreadsRoom(room: string): string | null {
+  if (!room.endsWith(THREADS_ROOM)) return null;
+  const name = room.slice(0, -THREADS_ROOM.length);
+  return isPageName(name) ? name : null;
 }

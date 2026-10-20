@@ -173,6 +173,15 @@ opens another page.
   `@nseaprotector/coelho-core`), and an editor can restore it: it is
   written into the room for everyone with the page open, and becomes the
   newest version, the one it replaced kept.
+- **Comment threads** on a page's words, live for everyone with it open.
+  A comment's author is the account that posted it: threads live in a
+  room of their own (`page::threads`) that every client reads and none
+  writes to; opening, answering, resolving and deleting go through the
+  API, which checks the session, repairs the body under a small comment
+  schema and writes into the room. A reader may comment, not edit; a
+  thread's author, an editor or an admin may resolve or delete it. Threads
+  stay on their words through everyone's typing (Yjs relative positions)
+  and are stored in Postgres beside the page, never in it.
 - **Search** as you type, every word a prefix, over a generated `tsvector`
   with a GIN index; matches come back marked with control characters, not
   HTML, since the text is the writers'.

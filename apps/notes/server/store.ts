@@ -61,6 +61,12 @@ export interface DocumentStore {
   addVersion(version: Omit<PageVersion, "id" | "createdAt" | "updatedAt">): Promise<PageVersion>;
   /** Folds a new state into an existing version. */
   updateVersion(id: string, change: Pick<PageVersion, "body" | "hash">): Promise<void>;
+  /** A page's threads room: its Yjs state, or `null` before anyone commented. */
+  loadThreads(name: string): Promise<Uint8Array | null>;
+  /** Stores the threads room's state, and its threads as JSON for the API. */
+  saveThreads(name: string, state: Uint8Array, threads: unknown[]): Promise<void>;
+  /** A page's threads as last stored. */
+  threads(name: string): Promise<unknown[]>;
   close(): Promise<void>;
 }
 
@@ -68,6 +74,7 @@ export interface DocumentStore {
 export function memoryStore(): DocumentStore {
   const rows = new Map<string, { page: StoredPage; state: Uint8Array }>();
   const history: PageVersion[] = [];
+  const discussions = new Map<string, { state: Uint8Array; threads: unknown[] }>();
   let nextVersion = 1;
   const summary = (version: PageVersion): VersionSummary => {
     const { body, ...rest } = version;
@@ -75,6 +82,9 @@ export function memoryStore(): DocumentStore {
     return rest;
   };
   return {
+    loadThreads: async (name) => discussions.get(name)?.state ?? null,
+    saveThreads: async (name, state, threads) => void discussions.set(name, { state, threads }),
+    threads: async (name) => discussions.get(name)?.threads ?? [],
     versions: async (name, page = {}) =>
       history
         .filter((version) => version.name === name && (page.before === undefined || Number(version.id) < Number(page.before)))
@@ -153,7 +163,13 @@ create table if not exists page_versions (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-create index if not exists page_versions_name on page_versions (name, id desc);`;
+create index if not exists page_versions_name on page_versions (name, id desc);
+create table if not exists page_threads (
+  name       text primary key,
+  state      bytea not null,
+  threads    jsonb not null default '[]',
+  updated_at timestamptz not null default now()
+);`;
 
 /**
  * Pages in Postgres. The Yjs state is what the room resumes from; the body
@@ -245,6 +261,21 @@ export async function postgresStore(pool: pg.Pool): Promise<DocumentStore> {
     },
     updateVersion: async (id, change) => {
       await pool.query("update page_versions set body = $2, hash = $3, updated_at = now() where id = $1", [id, JSON.stringify(change.body), change.hash]);
+    },
+    loadThreads: async (name) => {
+      const result = await pool.query("select state from page_threads where name = $1", [name]);
+      return result.rows[0] === undefined ? null : new Uint8Array(result.rows[0].state as Buffer);
+    },
+    saveThreads: async (name, state, threads) => {
+      await pool.query(
+        `insert into page_threads (name, state, threads, updated_at) values ($1, $2, $3, now())
+         on conflict (name) do update set state = $2, threads = $3, updated_at = now()`,
+        [name, Buffer.from(state), JSON.stringify(threads)],
+      );
+    },
+    threads: async (name) => {
+      const result = await pool.query("select threads from page_threads where name = $1", [name]);
+      return (result.rows[0]?.threads as unknown[] | undefined) ?? [];
     },
     close: async () => {},
   };

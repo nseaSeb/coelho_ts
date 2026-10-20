@@ -1,6 +1,6 @@
 import { collab } from "@nseaprotector/coelho-collab";
 import { toHtml, type Document, type ValidationError } from "@nseaprotector/coelho-core";
-import { createSuggestion, replaceSuggestion } from "@nseaprotector/coelho-prosemirror";
+import { commentsPlugin, commentsState, createSuggestion, replaceSuggestion } from "@nseaprotector/coelho-prosemirror";
 import { SuggestionMenu, Toolbar, useCoelhoEditor, useSuggestion, type NodeViewProps } from "@nseaprotector/coelho-react";
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import { Plugin } from "prosemirror-state";
@@ -9,6 +9,7 @@ import { isPageName, schema } from "../../server/schema.js";
 import { api, currentUser, type Me } from "./api.js";
 import { People, SignIn } from "./Auth.js";
 import { History } from "./History.js";
+import { Comments, Discussion, useDiscussion } from "./Threads.js";
 import { Sidebar, type PageSummary } from "./Pages.js";
 
 // The schema comes from the server's own module: what this editor writes is what the server validates.
@@ -87,6 +88,19 @@ function Page({ name, me, pages, onReauthenticated }: { name: string; me: Me; pa
   const [provider, setProvider] = useState<HocuspocusProvider | null>(null);
   const [status, setStatus] = useState<Status>("connecting");
   const [synced, setSynced] = useState(false);
+  const [discussion, setDiscussion] = useState<Discussion | null>(null);
+  const [tab, setTab] = useState<SideTab>("page");
+
+  // The page's threads, in a room of their own the server alone writes to.
+  useEffect(() => {
+    const next = new Discussion(name, me);
+    setDiscussion(next);
+    return () => {
+      next.destroy();
+      setDiscussion(null);
+    };
+    // A new role remounts the page, and with it this.
+  }, [name]);
 
   // Created in an effect, not during render: StrictMode would otherwise
   // open a second connection and never close it.
@@ -120,10 +134,14 @@ function Page({ name, me, pages, onReauthenticated }: { name: string; me: Me; pa
           {status === "connected" && !synced ? " · loading the page…" : ""}
         </div>
         {me.role === "reader" ? <p className="readonly">You can read this page. An admin can let you edit it.</p> : null}
-        {provider !== null && synced ? <Editor provider={provider} readOnly={me.role === "reader"} pages={pages} /> : <div className="placeholder">Opening “{name}”…</div>}
+        {provider !== null && synced && discussion !== null ? (
+          <Editor provider={provider} readOnly={me.role === "reader"} pages={pages} discussion={discussion} onComment={() => setTab("comments")} />
+        ) : (
+          <div className="placeholder">Opening “{name}”…</div>
+        )}
         <p className="hint">Open this page in another tab or browser: every writer edits the same page, live. Add <code>#another-name</code> to the URL for a new page.</p>
       </section>
-      <Side name={name} me={me} />
+      <Side name={name} me={me} tab={tab} setTab={setTab} discussion={discussion} />
     </div>
   );
 }
@@ -144,12 +162,32 @@ const nodeViews = { page_link: PageLink };
 
 type Choice = { name: string; create: boolean };
 
-function Editor({ provider, readOnly: reading, pages }: { provider: HocuspocusProvider; readOnly: boolean; pages: PageSummary[] }): ReactNode {
+interface EditorProps {
+  provider: HocuspocusProvider;
+  readOnly: boolean;
+  pages: PageSummary[];
+  discussion: Discussion;
+  onComment: () => void;
+}
+
+function Editor({ provider, readOnly: reading, pages, discussion, onComment }: EditorProps): ReactNode {
   const setup = useMemo(() => collab({ doc: provider.document, awareness: provider.awareness as NonNullable<typeof provider.awareness> }), [provider]);
-  // `[[` opens the list of pages; the plugin is made once for this editor.
+  // `[[` opens the list of pages; the plugins are made once for this editor.
   const [links] = useState(() => createSuggestion(["[["]));
-  const [plugins] = useState(() => (reading ? [...readOnly, links.plugin] : [links.plugin]));
+  const [plugins] = useState(() => [
+    // Placed after the collaboration plugins, as the threads' ranges need its binding.
+    commentsPlugin({ schema, source: discussion.source }),
+    ...(reading ? readOnly : []),
+    links.plugin,
+  ]);
   const editor = useCoelhoEditor({ schema, setup, history: false, plugins, nodeViews });
+  useDiscussion(discussion);
+  // The discussion acts on the editor, and hears which thread the editor has active.
+  useEffect(() => {
+    discussion.view = editor.view;
+  });
+  const active = editor.state === null ? null : (commentsState(editor.state)?.active ?? null);
+  useEffect(() => discussion.setActive(active), [discussion, active]);
   const known = useRef(pages);
   known.current = pages;
   const suggestion = useSuggestion<Choice>(editor, {
@@ -169,7 +207,21 @@ function Editor({ provider, readOnly: reading, pages }: { provider: HocuspocusPr
   });
   return (
     <div className="coelho-editor">
-      <Toolbar editor={editor} />
+      <div className="toolbar-row">
+        <Toolbar editor={editor} />
+        {/* A reader may comment too: commenting is not editing. */}
+        <button
+          type="button"
+          className="comment-button"
+          disabled={editor.state?.selection.empty ?? true}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            if (discussion.startDraft() !== null) onComment();
+          }}
+        >
+          Comment
+        </button>
+      </div>
       <div ref={editor.ref} className="coelho-editor-content" />
       {editor.portals}
       <SuggestionMenu suggestion={suggestion} label="Link a page">
@@ -193,21 +245,34 @@ interface StoredPage {
   updatedAt: string;
 }
 
-/** What Postgres holds for this page: read back from the server, never from this tab. */
 /** Beside the page: what is stored and who links here, or the page's history. */
-function Side({ name, me }: { name: string; me: Me }): ReactNode {
-  const [tab, setTab] = useState<"page" | "history">("page");
+type SideTab = "page" | "comments" | "history";
+
+interface SideProps {
+  name: string;
+  me: Me;
+  tab: SideTab;
+  setTab: (tab: SideTab) => void;
+  discussion: Discussion | null;
+}
+
+/** Beside the page: what is stored and who links here, the page's comments, or its history. */
+function Side({ name, me, tab, setTab, discussion }: SideProps): ReactNode {
+  const tabs: Array<[SideTab, string]> = [
+    ["page", "Page"],
+    ["comments", "Comments"],
+    ["history", "History"],
+  ];
   return (
     <aside className="stored">
       <div className="tabs side-tabs" role="tablist">
-        <button type="button" role="tab" aria-selected={tab === "page"} onClick={() => setTab("page")}>
-          Page
-        </button>
-        <button type="button" role="tab" aria-selected={tab === "history"} onClick={() => setTab("history")}>
-          History
-        </button>
+        {tabs.map(([value, label]) => (
+          <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>
+            {label}
+          </button>
+        ))}
       </div>
-      {tab === "page" ? <Stored name={name} /> : <History key={name} name={name} me={me} />}
+      {tab === "page" ? <Stored name={name} /> : tab === "history" ? <History key={name} name={name} me={me} /> : discussion === null ? null : <Comments discussion={discussion} me={me} />}
     </aside>
   );
 }
