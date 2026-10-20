@@ -2,6 +2,7 @@
 import { buildDefaultSchema, defaultSchema, extendSchema, toHtml, toMarkdown, toText, validate, type Node, type Schema } from "@coelho/core";
 import { describe, expect, test } from "vitest";
 import { fromHtml, fromMarkdown } from "../src/index.js";
+import { generator } from "./markdownDocuments.js";
 
 // Ported from coelho's test/coelho/markdown_test.exs. The oracle is the
 // same: Markdown has to say what HTML says. Both go back through one import
@@ -75,12 +76,12 @@ function safeDecode(url: string): string {
   }
 }
 
-function backFromMarkdown(document: Node, under: Schema): void {
+function backFromMarkdown(document: Node, under: Schema, label = ""): void {
   const markdown = toMarkdown(document, under);
   const expressed = validate(expressible(document), under);
   if (!expressed.ok) return;
   const viaHtml = fromHtml(toHtml(expressed.document, under), under);
-  expect(sameUrls(fromMarkdown(markdown, under)), `Markdown:\n${markdown}`).toEqual(sameUrls(viaHtml));
+  expect(sameUrls(fromMarkdown(markdown, under)), `${label}Markdown:\n${markdown}`).toEqual(sameUrls(viaHtml));
 }
 
 function cases(under: Schema, list: Array<[unknown[], string]>): void {
@@ -185,6 +186,16 @@ describe("toMarkdown", () => {
     }
   });
 
+  // Found by the property once its generator drew Unicode whitespace: a
+  // no-break space before a trailing space is the paragraph's real edge.
+  test("keeps Unicode whitespace at the edge of a block, which a reader's trim would take", () => {
+    cases(schema, [
+      [[p([t("a\u00a0 ")])], "a&#160; "],
+      [[p([t("\u202fb")])], "&#8239;b"],
+      [[{ type: "heading", attrs: { level: 2 }, content: [t("\u00a0x")] }], "## &#160;x"],
+    ]);
+  });
+
   test("writes a redeclared shipped mark the way it writes one of the application's", () => {
     const redeclared = extendSchema(defaultSchema(), { marks: { highlight: { render: ["span", []] } } });
     expect(md([p([t("hi", ["highlight"])])], redeclared)).toBe("hi");
@@ -284,107 +295,16 @@ describe("fromMarkdown", () => {
 
 // -- Properties --------------------------------------------------------------
 
-function random(seed: number): () => number {
-  let state = seed >>> 0;
-  return () => {
-    state = (state * 1664525 + 1013904223) >>> 0;
-    return state / 2 ** 32;
-  };
-}
-
-// Mostly what Markdown reads as syntax: delimiters at the edges of marks,
-// line-start markers after line breaks, backslashes, backticks in code.
-const HOSTILE = ["*", "**", "_", "__", "`", "``", "```", "~", "~~", "#", "##", "-", "--", "---", "+", "=", "==", ">", "|", "[", "]", "(", ")", "!", "&", "\\", "<", "1.", "1)", "2.", "a", "b", "word", ".", ",", ":", "\\!", " ", "  ", "x y"];
-const HOSTILE_MARKS = [
-  { type: "bold" },
-  { type: "italic" },
-  { type: "strike" },
-  { type: "code" },
-  { type: "link", attrs: { href: "/a(b)?c=*d*" } },
-  { type: "link", attrs: { href: "/a|b" } },
-  { type: "link", attrs: { href: "/?a=1&copy;b&amp;c", title: "&amp;amp; me" } },
-];
-
-function generator(seed: number) {
-  const next = random(seed);
-  const int = (min: number, max: number): number => min + Math.floor(next() * (max - min + 1));
-  const pick = <T,>(list: readonly T[]): T => list[Math.floor(next() * list.length)] as T;
-  const many = <T,>(min: number, max: number, make: () => T): T[] => Array.from({ length: int(min, max) }, make);
-
-  const text = (): string => many(1, 6, () => pick(HOSTILE)).join("");
-  const marks = (): unknown[] => [...new Set(many(0, 3, () => pick(HOSTILE_MARKS)))];
-  const inline = (): unknown => {
-    const roll = next();
-    if (roll < 0.7) return { type: "text", text: text(), marks: marks() };
-    if (roll < 0.85) return { type: "hard_break" };
-    const alt = text();
-    return { type: "image", attrs: { src: "/i*_[x].png&lt;", alt, title: `${alt}&lt;` } };
-  };
-  const paragraph = (): unknown => ({ type: "paragraph", content: many(1, 6, inline) });
-  const maybeEmpty = (): unknown => (next() < 0.8 ? paragraph() : { type: "paragraph", content: [] });
-  const list = (depth: number): unknown => {
-    const type = pick(["bullet_list", "ordered_list"]);
-    const items = many(1, 3, () => item(depth));
-    return type === "ordered_list" ? { type, attrs: { start: next() < 0.85 ? int(0, 4) : 999_999_999 }, content: items } : { type, content: items };
-  };
-  const item = (depth: number): unknown => {
-    const first = maybeEmpty();
-    if (depth === 0) return { type: "list_item", content: [first] };
-    const roll = next();
-    const nested =
-      roll < 0.25 ? null : roll < 0.5 ? list(depth - 1) : roll < 0.75 ? { type: "horizontal_rule" } : { type: "code_block", content: [{ type: "text", text: text() }] };
-    return { type: "list_item", content: nested === null ? [first] : [first, nested] };
-  };
-  const cell = (): unknown[] => {
-    const roll = next();
-    if (roll < 4 / 7) return [maybeEmpty()];
-    if (roll < 5 / 7) return [paragraph(), paragraph()];
-    if (roll < 6 / 7) {
-      const value = text();
-      return [{ type: "code_block", attrs: { language: "elixir" }, content: [{ type: "text", text: `${value}\n${value}` }] }];
-    }
-    return [list(0)];
-  };
-  const table = (): unknown => {
-    const width = int(1, 3);
-    const rows = many(1, 3, () => Array.from({ length: width }, cell));
-    const row = (cells: unknown[][], type: string): unknown => ({ type: "table_row", content: cells.map((content) => ({ type, content })) });
-    const [header, ...body] = rows;
-    return { type: "table", content: [row(header as unknown[][], "table_header"), ...body.map((cells) => row(cells, "table_cell"))] };
-  };
-  const blockOf = (): unknown => {
-    switch (int(0, 7)) {
-      case 0:
-        return paragraph();
-      case 1:
-        return { type: "paragraph", content: [] };
-      case 2:
-        return { type: "heading", attrs: { level: int(1, 6) }, content: many(1, 4, inline) };
-      case 3:
-        return list(2);
-      case 4:
-        return { type: "blockquote", content: many(1, 2, paragraph) };
-      case 5:
-        return { type: "code_block", content: [{ type: "text", text: text() }] };
-      case 6:
-        return { type: "horizontal_rule" };
-      default:
-        return table();
-    }
-  };
-  return { text, document: (): Node => ({ type: "doc", content: many(1, 5, blockOf) }) as Node };
-}
-
 describe("properties", () => {
-  test("what Markdown reads as syntax comes back as the characters that were typed", () => {
-    // MARKDOWN_SEEDS=5000 for a longer search.
-    const seeds = Number(process.env.MARKDOWN_SEEDS ?? 500);
+  // MARKDOWN_SEEDS=5000 for a longer search; the timeout grows with it.
+  const seeds = Number(process.env.MARKDOWN_SEEDS ?? 500);
+  test("what Markdown reads as syntax comes back as the characters that were typed", { timeout: Math.max(60_000, seeds * 30) }, () => {
     let checked = 0;
     for (let seed = 1; seed <= seeds; seed += 1) {
       const original = validate(generator(seed).document(), tables);
       if (!original.ok) continue;
       checked += 1;
-      backFromMarkdown(original.document, tables);
+      backFromMarkdown(original.document, tables, `seed ${seed}\n`);
     }
     expect(checked).toBeGreaterThan(300);
   });
@@ -415,19 +335,55 @@ describe("pasting Markdown", () => {
   }
 
   test("arrives formatted, and the plain-text paste keeps it plain", async () => {
-    const { EditorState } = await import("prosemirror-state");
+    const { EditorState, TextSelection } = await import("prosemirror-state");
     const { EditorView } = await import("prosemirror-view");
     const { Node: PMNode } = await import("prosemirror-model");
     const { markdownPaste, toProseMirrorSchema } = await import("../src/index.js");
     const pm = toProseMirrorSchema(schema);
     const make = (): InstanceType<typeof EditorView> => {
       const host = document.body.appendChild(document.createElement("div"));
-      return new EditorView(host, { state: EditorState.create({ doc: PMNode.fromJSON(pm, { type: "doc", content: [{ type: "paragraph" }] }), plugins: [markdownPaste()] }) });
+      return new EditorView(host, { state: EditorState.create({ doc: PMNode.fromJSON(pm, { type: "doc", content: [{ type: "paragraph" }] }), plugins: [markdownPaste(schema)] }) });
     };
 
     const view = make();
     paste(view, "**bold** and `code`\n\n- one\n- two");
     expect(toHtml(valid(view.state.doc.toJSON()), schema)).toBe("<p><strong>bold</strong> and <code>code</code></p><ul><li><p>one</p></li><li><p>two</p></li></ul>");
+
+    // Text that says nothing in Markdown takes the marks at the cursor.
+    const bold = make();
+    bold.dispatch(bold.state.tr.insertText("ab").addMark(1, 3, pm.marks.bold!.create()));
+    bold.dispatch(bold.state.tr.setSelection(TextSelection.create(bold.state.doc, 2)));
+    paste(bold, "word");
+    expect(toHtml(valid(bold.state.doc.toJSON()), schema)).toBe("<p><strong>awordb</strong></p>");
+
+    // Nothing is parsed inside inline code.
+    const code = make();
+    code.dispatch(code.state.tr.insertText("ab").addMark(1, 3, pm.marks.code!.create()));
+    code.dispatch(code.state.tr.setSelection(TextSelection.create(code.state.doc, 2)));
+    paste(code, "x*y* `z`");
+    expect(toHtml(valid(code.state.doc.toJSON()), schema)).toBe("<p><code>ax*y* `z`b</code></p>");
+
+    // An escape is Markdown too: \*x\* is the characters *x*, not a paste of backslashes.
+    const escaped = make();
+    paste(escaped, "\\*x\\*");
+    expect(toHtml(valid(escaped.state.doc.toJSON()), schema)).toBe("<p>*x*</p>");
+
+    // A list pasted into an item opens with its paragraph, as fromMarkdown reads it.
+    const rule = make();
+    paste(rule, "-\n  ---");
+    expect(valid(rule.state.doc.toJSON()).content).toEqual([{ type: "bullet_list", content: [{ type: "list_item", content: [{ type: "paragraph" }, { type: "horizontal_rule" }] }] }]);
+
+    // A paste that starts with a list keeps its first bullet.
+    const list = make();
+    paste(list, "- one\n- two");
+    expect(toHtml(valid(list.state.doc.toJSON()), schema)).toBe("<ul><li><p>one</p></li><li><p>two</p></li></ul>");
+
+    // A paragraph at the edge of a paste runs into the text around the cursor.
+    const inside = make();
+    inside.dispatch(inside.state.tr.insertText("[]"));
+    inside.dispatch(inside.state.tr.setSelection(TextSelection.create(inside.state.doc, 2)));
+    paste(inside, "a **b**");
+    expect(toHtml(valid(inside.state.doc.toJSON()), schema)).toBe("<p>[a <strong>b</strong>]</p>");
 
     // pasteText is ProseMirror's plain-text paste, what Shift-paste does.
     const plain = make();

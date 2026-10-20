@@ -101,17 +101,36 @@ break) is written as HTML. Your own nodes and marks take overrides.
 
 `fromMarkdown` and `fromHtml` (in `@coelho/prosemirror`, they need a DOM)
 go the other way through the schema's own parse rules, on an inert
-document: nothing in the HTML runs or loads. `markdownPaste()` makes
-pasted plain text arrive formatted; Shift-paste keeps it plain.
+document: nothing in the HTML runs or loads. `markdownPaste(schema)` makes
+pasted plain text arrive formatted. Text that says nothing in Markdown is
+left to ProseMirror, so it takes the marks at the cursor (a word pasted
+into bold stays bold); nothing is parsed inside code; Shift-paste keeps
+everything plain.
 
 The tests are coelho's, with its oracle: a document's Markdown, read back,
 has to equal its HTML read back through the same import, so the only
 differences left are the Markdown's. Every string coelho pins comes out
-identical here, and the property holds on 5,000 generated documents made
-mostly of syntax (`MARKDOWN_SEEDS=5000 pnpm test`). Two things had to be
-fixed on the way, neither in the writer: markdown-it drops escaped
-characters from an image's alt text, and ProseMirror's parser moves a
-block out of a list item that does not open with its paragraph.
+identical here. Of coelho's three properties, two are ported; the third
+draws from coelho's shared document generator, and stands in here as
+Unicode added to the syntax-heavy one: no-break and narrow spaces, `«` `»`,
+`’`, a decomposed `é`, emoji. The property holds on 5,000 generated
+documents (`MARKDOWN_SEEDS=5000 pnpm test`; the timeout grows with it).
+
+What the search found, none of it in the writer's escaping:
+
+- markdown-it drops escaped characters from an image's alt text;
+- ProseMirror's parser moves a block out of a list item that does not
+  open with its paragraph, and its paste opens a slice so deep that a
+  pasted list lost its first bullet;
+- CommonMark strips only spaces and tabs at a block's edge, while
+  JavaScript's `trim` (markdown-it uses it) strips a no-break space too.
+  `toMarkdown` writes such a space at an edge as its entity, the one place
+  it differs from coelho's writer; every reader decodes it to the same
+  character.
+
+`scripts/sanitize-parity` also exports 800 of these documents with this
+writer's Markdown, for `compare.exs` to replay through coelho's
+`to_markdown` from a coelho checkout; it reports the edge entities apart.
 
 ## React inside the editor
 

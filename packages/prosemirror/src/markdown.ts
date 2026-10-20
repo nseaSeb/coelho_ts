@@ -1,6 +1,6 @@
 import { sanitize, type Document, type Schema as CoelhoSchema } from "@coelho/core";
 import MarkdownIt from "markdown-it";
-import { DOMParser, Slice, type Schema } from "prosemirror-model";
+import { DOMParser, Slice, type Fragment, type Schema } from "prosemirror-model";
 import { Plugin } from "prosemirror-state";
 import { toProseMirrorSchema } from "./schema.js";
 
@@ -107,16 +107,44 @@ export function fromMarkdown(markdown: string, schema: CoelhoSchema): Document {
 
 /**
  * Pasting plain text reads it as Markdown, so `**bold**` and `- items`
- * arrive formatted. Shift-paste keeps it plain, as ProseMirror does.
+ * arrive formatted. Text that says nothing in Markdown is left to
+ * ProseMirror's own plain-text paste, which gives it the marks at the
+ * cursor: a word pasted into a bold run stays bold, a URL pasted into a
+ * link stays in it. Nothing is parsed inside code, inline or block, and
+ * Shift-paste keeps everything plain.
  */
-export function markdownPaste(): Plugin {
+export function markdownPaste(schema: CoelhoSchema): Plugin {
+  const parsed = new WeakSet<Fragment>();
   return new Plugin({
     props: {
       clipboardTextParser: (text, $context, plain) => {
-        if (plain) return null as unknown as Slice;
-        const schema = $context.doc.type.schema;
-        return DOMParser.fromSchema(schema).parseSlice(inert(markdownToHtml(text)), { context: $context });
+        if (plain || $context.marks().some((mark) => mark.type.spec.code)) return null as unknown as Slice;
+        const body = inert(markdownToHtml(text));
+        if (saysNothing(body, text)) return null as unknown as Slice;
+        openRequiredFirst(body, schema);
+        const slice = DOMParser.fromSchema($context.doc.type.schema).parseSlice(body, { context: $context });
+        parsed.add(slice.content);
+        return slice;
+      },
+      // ProseMirror opens a pasted slice as deep as it goes, so a paste
+      // starting with a list would pour its first item into the paragraph at
+      // the cursor and lose the bullet. For a slice read from Markdown, only
+      // a paragraph at an edge stays open, to run into the text around the
+      // cursor; anything else is pasted whole.
+      transformPasted: (slice) => {
+        if (!parsed.has(slice.content)) return slice;
+        const first = slice.content.firstChild;
+        const last = slice.content.lastChild;
+        return new Slice(slice.content, first?.isTextblock && slice.openStart > 0 ? 1 : 0, last?.isTextblock && slice.openEnd > 0 ? 1 : 0);
       },
     },
   });
+}
+
+/** Paragraphs of plain text whose words are exactly what was typed: no syntax, no escape. */
+function saysNothing(body: HTMLElement, text: string): boolean {
+  const blocks = Array.from(body.children);
+  if (!blocks.every((block) => block.tagName === "P" && block.children.length === 0)) return false;
+  const typed = text.replace(/\r\n?/g, "\n").trim().split(/\n\s*\n/).map((paragraph) => paragraph.trim());
+  return blocks.length === typed.length && blocks.every((block, index) => block.textContent === typed[index]);
 }

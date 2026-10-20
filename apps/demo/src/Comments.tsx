@@ -59,7 +59,7 @@ export function CommentedEditor({ schema, value, onChange, threads, onThreadsCha
   const [plugins] = useState(() => [
     commentsPlugin({ schema, restore: () => live.current.map(({ id, anchor, resolved, orphaned }) => ({ id, anchor, resolved, lost: orphaned })) }),
     suggestion.plugin,
-    markdownPaste(),
+    markdownPaste(schema),
   ]);
   const editor = useCoelhoEditor({ schema, value, onChange, plugins, nodeViews });
   const [author, setAuthor] = useState(AUTHORS[0] as string);

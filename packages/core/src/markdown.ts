@@ -152,7 +152,7 @@ function needed(node: Node, child: Node, index: number, content: Node[]): boolea
 function heading(node: Node, state: State): string {
   const given = attr(node, "level", 1);
   const level = Number.isInteger(given) && (given as number) >= 1 && (given as number) <= 6 ? (given as number) : 1;
-  const text = escapeClosingHashes(paragraph(node, state));
+  const text = keepEdgeWhitespace(escapeClosingHashes(escapeLineStarts(inline(node, state))));
   return text.trim() === "" ? "" : `${"#".repeat(level)} ${text}`;
 }
 
@@ -263,11 +263,27 @@ function entity(char: string): string {
 // -- Inline -----------------------------------------------------------------
 
 function paragraph(node: Node, state: State): string {
-  return escapeLineStarts(inline(node, state));
+  return keepEdgeWhitespace(escapeLineStarts(inline(node, state)));
 }
 
 function paragraphText(text: string): string {
-  return escapeLineStarts(escape(text)).replace(/^ +/, (spaces) => "&#32;".repeat(spaces.length));
+  return keepEdgeWhitespace(escapeLineStarts(escape(text)).replace(/^ +/, (spaces) => "&#32;".repeat(spaces.length)));
+}
+
+/**
+ * CommonMark strips only spaces and tabs from the edges of a paragraph, a
+ * heading or a cell; a no-break space, a narrow one or an em space is
+ * content. JavaScript's `trim`, which some readers use (markdown-it among
+ * them), strips those too, so one at an edge is written as its entity:
+ * the same character to every reader. This is the one place where this
+ * writer differs from coelho's, which leaves the character as it is.
+ */
+function keepEdgeWhitespace(text: string): string {
+  // Within the whitespace at an edge, which may mix both kinds: CommonMark
+  // strips the spaces and tabs past the last other character, so any other
+  // one there becomes the edge, and is what a `trim` would take.
+  const protect = (run: string): string => [...run].map((char) => (/[ \t\n\r\f\v]/.test(char) ? char : `&#${char.codePointAt(0)};`)).join("");
+  return text.replace(/^\s+/u, protect).replace(/\s+$/u, protect);
 }
 
 interface MarkInfo {
