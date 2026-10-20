@@ -39,7 +39,8 @@ export type LoadResult = { ok: true; doc: Node; repaired?: ValidationError[] } |
 export interface LoadOptions {
   /**
    * Load a document that does not validate after putting it through
-   * `sanitize`, instead of refusing it. The result then says what was wrong
+   * `sanitize`, instead of refusing it. Length bounds are lifted for the
+   * repair, so nothing is truncated on the way in. The result then says what was wrong
    * in `repaired`. For rows written under an older or looser schema: an
    * editor that refuses them shows nothing, and saving it loses everything.
    */
@@ -56,7 +57,11 @@ export function toProseMirrorDoc(pmSchema: Schema, schema: CoelhoSchema, value: 
   if (value === null || value === undefined) return { ok: true, doc: pmSchema.topNodeType.createAndFill() as Node };
   const result = validate(value, schema);
   if (!result.ok && !options.repair) return result;
-  const document = result.ok ? result.document : sanitize(value, schema);
+  // Reading is not writing: a row over the field's length bounds is kept
+  // whole here, and the next validation on save says so. Cutting it to fit
+  // on the way into the editor would lose the rest on the first save.
+  // The node and depth bounds stay, since they protect the process.
+  const document = result.ok ? result.document : sanitize(value, schema, { limits: { maxTextLength: Infinity, maxAttrLength: Infinity } });
   try {
     const doc = Node.fromJSON(pmSchema, document);
     doc.check();

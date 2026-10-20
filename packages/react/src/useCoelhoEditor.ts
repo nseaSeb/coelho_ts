@@ -1,4 +1,4 @@
-import { canonical, type Node as CoelhoNode, type Schema as CoelhoSchema, type ValidationError } from "@coelho/core";
+import type { Node as CoelhoNode, Schema as CoelhoSchema, ValidationError } from "@coelho/core";
 import { coelhoPlugins, toProseMirrorDoc, toProseMirrorSchema } from "@coelho/prosemirror";
 import type { Node, Schema } from "prosemirror-model";
 import { EditorState, type Plugin, type Transaction } from "prosemirror-state";
@@ -77,15 +77,22 @@ export function useCoelhoEditor(options: UseCoelhoEditorOptions): CoelhoEditor {
   }, []);
   const state = useSyncExternalStore(subscribe, () => viewRef.current?.state ?? null, () => null);
 
+  // The value a problem was last reported for, so one bad document is
+  // reported once, however many times it is looked at.
+  const reportedFor = useRef<unknown>(undefined);
   const load = useCallback(
-    (document: CoelhoNode | null | undefined): Node | null => {
+    (document: CoelhoNode | null | undefined, current?: Node): Node | null => {
       const loaded = toProseMirrorDoc(pmSchema, schema, document, { repair: repairRef.current ?? false });
-      if (!loaded.ok) {
-        (onInvalidRef.current ?? reportInvalid)(loaded.errors);
-        return null;
+      // Compared as ProseMirror documents, which fill in default attributes:
+      // a validated document omits them and `toJSON` spells them out, so the
+      // two JSON forms of one document never match byte for byte.
+      if (loaded.ok && current !== undefined && loaded.doc.eq(current)) return null;
+      const problems = loaded.ok ? loaded.repaired : loaded.errors;
+      if (problems !== undefined && reportedFor.current !== document) {
+        reportedFor.current = document;
+        (onInvalidRef.current ?? (loaded.ok ? reportRepaired : reportInvalid))(problems);
       }
-      if (loaded.repaired !== undefined) (onInvalidRef.current ?? reportRepaired)(loaded.repaired);
-      return loaded.doc;
+      return loaded.ok ? loaded.doc : null;
     },
     [pmSchema, schema],
   );
@@ -121,8 +128,7 @@ export function useCoelhoEditor(options: UseCoelhoEditorOptions): CoelhoEditor {
   useEffect(() => {
     const view = viewRef.current;
     if (view === null || value === undefined || value === lastEmitted.current) return;
-    if (value !== null && canonical(view.state.doc.toJSON()) === canonical(value)) return;
-    const doc = load(value);
+    const doc = load(value, view.state.doc);
     if (doc === null) return;
     view.updateState(EditorState.create({ doc, plugins: view.state.plugins }));
     for (const listener of listeners.current) listener();

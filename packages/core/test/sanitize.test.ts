@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { defaultSchema, defineSchema, emptyDocument, extendSchema, sanitize, textLength, toHtml, toText, validate, type Limits, type Node } from "../src/index.js";
+import { base, hostile, mutated } from "./hostile.js";
 
 // Ported from coelho's test/coelho/sanitize_test.exs, case for case.
 const schema = defaultSchema();
@@ -232,93 +233,28 @@ describe("limits", () => {
 });
 
 describe("on random hostile trees", () => {
-  // A seeded generator, so a failure is reproducible from its seed.
-  function random(seed: number): () => number {
-    let state = seed >>> 0;
-    return () => {
-      state = (state * 1664525 + 1013904223) >>> 0;
-      return state / 2 ** 32;
-    };
-  }
-
-  const types = ["doc", "paragraph", "heading", "text", "image", "link", "bullet_list", "list_item", "code_block", "hard_break", "attachment", "script", "", 7, null];
-  const markTypes = ["bold", "italic", "link", "code", "blink", null, 3];
-  const values = [null, true, 0, 1, 3, 99, -1, "", "x", "javascript:alert(1)", "https://ok.test", "left", "center", [], {}, { nested: { deep: [1, 2] } }];
-
-  function hostile(next: () => number, depth: number): unknown {
-    const pick = <T,>(list: readonly T[]): T => list[Math.floor(next() * list.length)] as T;
-    const roll = next();
-    if (roll < 0.05) return pick(values);
-    const node: Record<string, unknown> = { type: pick(types) };
-    if (next() < 0.5) node.text = next() < 0.8 ? "word ".repeat(Math.floor(next() * 4)) : pick(values);
-    if (next() < 0.3) node.attrs = next() < 0.8 ? { level: pick(values), src: pick(values), href: pick(values), key: pick(values), align: pick(values), start: pick(values) } : pick(values);
-    if (next() < 0.3) node.marks = next() < 0.8 ? Array.from({ length: Math.floor(next() * 3) }, () => ({ type: pick(markTypes), attrs: { href: pick(values) } })) : pick(values);
-    if (next() < 0.2) node[pick(["onclick", "style", "schema_version", "__proto__x"])] = pick(values);
-    if (depth < 6 && next() < 0.7) node.content = next() < 0.9 ? Array.from({ length: Math.floor(next() * 4) }, () => hostile(next, depth + 1)) : pick(values);
-    return node;
-  }
-
   test("what comes out always validates, and sanitising it again changes nothing", () => {
     for (let seed = 1; seed <= 500; seed += 1) {
-      const next = random(seed);
-      const input = next() < 0.8 ? { type: "doc", content: Array.from({ length: 1 + Math.floor(next() * 4) }, () => hostile(next, 1)) } : hostile(next, 0);
-      const once = sanitize(input, schema);
+      const once = sanitize(hostile(seed), schema);
       expect(validate(once, schema), `seed ${seed}`).toEqual({ ok: true, document: once });
       expect(sanitize(once, schema), `seed ${seed}`).toEqual(once);
       expect(() => toHtml(once, schema)).not.toThrow();
     }
   });
 
-  // A valid document, then a few of the things a stored row picks up over
-  // the years. Repairs are local: the paragraphs nobody touched survive.
-  const base = (): Node =>
-    doc([
-      { type: "heading", attrs: { level: 2 }, content: [text("Title")] },
-      paragraph([text("alpha "), text("bold", [{ type: "bold" }]), text(" link", [{ type: "link", attrs: { href: "https://ok.test" } }])]),
-      { type: "bullet_list", content: [{ type: "list_item", content: [paragraph([text("one")])] }, { type: "list_item", content: [paragraph([text("two")])] }] },
-      paragraph([text("omega"), { type: "hard_break" }, { type: "image", attrs: { src: "/a.png", alt: "a" } }]),
-      { type: "code_block", content: [text("x = 1")] },
-    ]);
-
-  type Mutation = (node: Record<string, unknown>, next: () => number) => void;
-  const mutations: Mutation[] = [
-    (node) => (node.onclick = "alert(1)"),
-    (node) => (node.attrs = { ...(node.attrs as object), level: 99, align: "sideways" }),
-    (node) => (node.type = "script"),
-    (node) => (node.marks = [{ type: "blink" }, { type: "link", attrs: { href: "javascript:alert(1)" } }]),
-    (node) => (node.content = "not a list"),
-    (node) => (node.attrs = "not a map"),
-    (node) => (node.text = 42),
-    (node) => {
-      if (Array.isArray(node.content)) node.content.push({ type: "image", attrs: { alt: "no src" } });
-    },
-  ];
-
-  function nodes(node: Record<string, unknown>, out: Record<string, unknown>[] = []): Record<string, unknown>[] {
-    out.push(node);
-    if (Array.isArray(node.content)) for (const child of node.content) nodes(child as Record<string, unknown>, out);
-    return out;
-  }
-
   test("a few mutations of a valid document lose only what they touched", () => {
+    // Repairs are local: the blocks nobody touched survive.
     const whole = textLength(base());
     let partial = 0;
     for (let seed = 1; seed <= 300; seed += 1) {
-      const next = random(seed);
-      const input = JSON.parse(JSON.stringify(base())) as Record<string, unknown>;
-      const all = nodes(input).slice(1);
-      for (let i = 0; i < 1 + Math.floor(next() * 3); i += 1) {
-        const target = all[Math.floor(next() * all.length)] as Record<string, unknown>;
-        (mutations[Math.floor(next() * mutations.length)] as Mutation)(target, next);
-      }
-      const once = sanitize(input, schema);
+      const once = sanitize(mutated(seed), schema);
       expect(validate(once, schema), `seed ${seed}`).toEqual({ ok: true, document: once });
       expect(sanitize(once, schema), `seed ${seed}`).toEqual(once);
       const length = textLength(once);
       expect(length, `seed ${seed}`).toBeGreaterThan(0);
       if (length < whole) partial += 1;
     }
-    // Some repairs cost text (an unknown node takes its text with it), most keep some.
+    // Some repairs cost text (an unknown node takes its text with it), none cost all of it.
     expect(partial).toBeGreaterThan(0);
   });
 });

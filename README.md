@@ -26,7 +26,7 @@ sits behind the editor. This project separates the two:
 
 | Package | What | Status |
 | --- | --- | --- |
-| `@coelho/core` | schema, `validate`, `sanitize`, `canonical`, `hash`, `toHtml`, `toInlineHtml`, `toText`, `isBlank`, trusted/untrusted rendering policy, anchors | parity with coelho on every fixture |
+| `@coelho/core` | schema, `validate`, `sanitize`, `canonical`, `hash`, `toHtml`, `toInlineHtml`, `toText`, `isBlank`, trusted/untrusted rendering policy, anchors | `validate`, `canonical`, `hash`, `toHtml` and `toText` byte for byte with coelho's corpus; `sanitize` ported with coelho's own test suite |
 | `@coelho/prosemirror` | coelho schema → ProseMirror `Schema`, editing plugins, anchored comments plugin | working |
 | `@coelho/react` | `<CoelhoEditor>`, `useCoelhoEditor`, default toolbar | working |
 
@@ -125,6 +125,14 @@ HTML and text the Elixir implementation produced.
 `packages/core/test/parity.test.ts` replays every entry here and expects
 the same bytes. A change to the fixture is a change to what both sides
 promise, and is reviewed as such.
+
+To check `sanitize` against the Elixir implementation on 800 generated
+documents, from a coelho checkout:
+
+```
+SANITIZE_PARITY_OUT=/tmp/cases.json pnpm vitest run scripts/sanitize-parity
+cd ../coelho && MIX_ENV=test mix run ../coelho_ts/scripts/sanitize-parity/compare.exs /tmp/cases.json
+```
 
 ## Development
 

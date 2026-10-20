@@ -103,6 +103,14 @@ describe("loading a stored document", () => {
     expect(loaded.ok && loaded.repaired?.[0]?.message).toBe('unknown node type "script"');
   });
 
+  test("does not truncate a row over the length bounds while repairing it", () => {
+    const bounded = extendSchema(schema, { limits: { maxTextLength: 10 } });
+    const long = "a".repeat(40);
+    const stored = { type: "doc", content: [{ type: "script" }, { type: "paragraph", content: [{ type: "text", text: long }] }] };
+    const loaded = toProseMirrorDoc(toProseMirrorSchema(bounded), bounded, stored, { repair: true });
+    expect(loaded.ok && loaded.doc.textContent).toBe(long);
+  });
+
   test("loads what does, and an absent document as empty", () => {
     const loaded = toProseMirrorDoc(pm, schema, { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "hi" }] }] });
     expect(loaded.ok && loaded.doc.textContent).toBe("hi");

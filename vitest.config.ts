@@ -5,6 +5,6 @@ export default defineConfig({
   resolve: { alias: workspaceAliases },
   esbuild: { jsx: "automatic" },
   test: {
-    include: ["packages/*/test/**/*.test.ts", "apps/*/test/**/*.test.tsx"],
+    include: ["packages/*/test/**/*.test.{ts,tsx}", "apps/*/test/**/*.test.tsx", "scripts/**/*.test.ts"],
   },
 });
