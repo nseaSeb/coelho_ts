@@ -1,3 +1,5 @@
+import type { Page } from "@playwright/test";
+
 /**
  * The key that moves the caret to the end of the line. On macOS, End
  * scrolls the page to its bottom and leaves the caret where it is; the
@@ -18,6 +20,6 @@ export const PASTE_PLAIN = process.platform === "darwin" ? null : "Control+Shift
  * faster than anyone could, so a paste right after would land where the
  * caret was before.
  */
-export async function settle(page: { evaluate: (fn: () => Promise<void>) => Promise<void> }): Promise<void> {
+export async function settle(page: Page): Promise<void> {
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0))));
 }

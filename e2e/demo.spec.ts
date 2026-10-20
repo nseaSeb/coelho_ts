@@ -81,8 +81,15 @@ test("two writers: what one types reaches the other, with a named cursor", async
   const [camille, sacha] = [page.locator(".collab .pane").nth(0), page.locator(".collab .pane").nth(1)];
   await camille.locator(".ProseMirror p").first().click();
   await page.keyboard.press(LINE_END);
+  await settle(page);
   await page.keyboard.type(" Camille was here.");
   await expect(sacha.locator(".ProseMirror")).toContainText("Camille was here.");
   await expect(sacha.locator(".ProseMirror-yjs-cursor")).toContainText("Camille");
-  await expect(page.locator(".stored .ok")).toBeVisible();
+  // What each would store has it at the end of the line, where the caret
+  // was put (the editor's own text also holds the other's cursor label),
+  // and the two are the same document.
+  const stored = page.locator(".stored-one .prose p:first-of-type");
+  await expect(stored).toHaveCount(2);
+  for (const paragraph of await stored.all()) await expect(paragraph).toHaveText(/ Camille was here\.$/);
+  await expect(page.locator(".stored .ok")).toContainText("Both would store the same document");
 });

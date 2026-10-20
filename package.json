@@ -13,7 +13,7 @@
     "build": "pnpm -r build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc -b && tsc -p apps/demo && tsc -p apps/notes/server --noEmit && tsc -p apps/notes/web",
+    "typecheck": "tsc -b && tsc -p apps/demo && tsc -p apps/notes/server --noEmit && tsc -p apps/notes/web && tsc -p e2e",
     "lint": "eslint .",
     "check": "pnpm typecheck && pnpm lint && pnpm test",
     "e2e": "pnpm -r --filter \"./packages/*\" build && pnpm --filter coelho-notes build && playwright test"

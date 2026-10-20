@@ -4,12 +4,13 @@ import { memoryAccounts, postgresAccounts, ROLES, type Role } from "./accounts.j
 import { createNotesServer } from "./app.js";
 import { memoryStore, postgresStore } from "./store.js";
 
-const url = process.env.DATABASE_URL;
+// Empty is unset: what a launcher passes to keep a database out of it.
+const url = process.env.DATABASE_URL || undefined;
 const pool = url === undefined ? null : new pg.Pool({ connectionString: url });
 const store = pool === null ? memoryStore() : await postgresStore(pool);
 const accounts = pool === null ? memoryAccounts() : await postgresAccounts(pool);
 const port = Number(process.env.PORT ?? 1234);
-const staticDir = process.env.STATIC_DIR ?? fileURLToPath(new URL("../web", import.meta.url));
+const staticDir = process.env.STATIC_DIR || fileURLToPath(new URL("../web", import.meta.url));
 const defaultRole = (ROLES as string[]).includes(process.env.DEFAULT_ROLE ?? "") ? (process.env.DEFAULT_ROLE as Role) : "reader";
 
 const server = createNotesServer({

@@ -1,18 +1,29 @@
+import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { LINE_END, settle } from "./keys.js";
-import { expect, test, type Browser, type Page } from "@playwright/test";
 
-// One run, one in-memory server: the first sign-up is the admin.
+// One in-memory server for the run: the first sign-up is the admin. The
+// tests share it, so they run in order; a retry finds the accounts the
+// first attempt made, which is why each one is made or signed in to.
 test.describe.configure({ mode: "serial" });
 
-async function signUp(browser: Browser, name: string): Promise<Page> {
-  const page = await (await browser.newContext()).newPage();
+const PASSWORD = "correct horse battery";
+const contexts: BrowserContext[] = [];
+
+test.afterEach(async () => {
+  // Each closed page leaves the server: no stale cursor in the next test.
+  for (const context of contexts.splice(0)) await context.close();
+});
+
+/** Signs up, or signs in when a previous attempt already made the account. */
+async function account(browser: Browser, name: string, email: string): Promise<Page> {
+  const context = await browser.newContext();
+  contexts.push(context);
+  const page = await context.newPage();
+  const response = await page.request.post("/api/signup", { data: { name, email, password: PASSWORD } });
+  if (response.status() === 409) await page.request.post("/api/login", { data: { email, password: PASSWORD } });
+  else expect(response.status()).toBe(201);
   await page.goto("/");
-  await page.getByRole("tab", { name: "Create an account" }).click();
-  await page.getByLabel("Name").fill(name);
-  await page.getByLabel("Email").fill(`${name.toLowerCase()}@example.test`);
-  await page.getByLabel("Password").fill("correct horse battery");
-  await page.getByRole("button", { name: "Create the account" }).click();
-  await expect(page.locator(".coelho-editor-content .ProseMirror")).toBeVisible();
+  await expect(editor(page)).toBeVisible();
   return page;
 }
 
@@ -25,10 +36,13 @@ async function typeAtEnd(page: Page, text: string): Promise<void> {
   await page.keyboard.type(text);
 }
 
-test("the first account is the admin; a reader reads until made an editor, then writes live", async ({ browser }) => {
-  const admin = await signUp(browser, "Ada");
+test("the first account is the admin; a reader reads until made an editor, then writes live", async ({ browser }, testInfo) => {
+  const admin = await account(browser, "Ada", "ada@example.test");
   await expect(admin.locator(".role")).toHaveText("admin");
-  const reader = await signUp(browser, "Lin");
+  // A new reader on every attempt and repetition: one must not find them promoted already.
+  const attempt = `${testInfo.repeatEachIndex}${testInfo.retry}`;
+  const lin = `Lin${attempt}`;
+  const reader = await account(browser, lin, `lin-${attempt}@example.test`);
   await expect(reader.locator(".role")).toHaveText("reader");
   await expect(reader.getByText("You can read this page.")).toBeVisible();
   await expect(editor(reader)).toHaveAttribute("contenteditable", "false");
@@ -37,35 +51,31 @@ test("the first account is the admin; a reader reads until made an editor, then 
   await expect(editor(reader)).toContainText("Ada wrote this.");
 
   await admin.getByRole("button", { name: "People" }).click();
-  await admin.getByLabel("Role of Lin").selectOption("editor");
+  await admin.getByLabel(`Role of ${lin}`).selectOption("editor");
   await expect(reader.locator(".role")).toHaveText("editor");
   await expect(editor(reader)).toHaveAttribute("contenteditable", "true");
 
-  await typeAtEnd(reader, " Lin too.");
-  await expect(editor(admin)).toContainText("Lin too.");
-  await expect(editor(admin).locator(".ProseMirror-yjs-cursor")).toContainText("Lin");
-  // What the server stored, read back, says who changed it last.
-  await expect(admin.locator(".stored")).toContainText("Lin too.");
+  await typeAtEnd(reader, ` ${lin} too.`);
+  await expect(editor(admin)).toContainText(`${lin} too.`);
+  await expect(editor(admin).locator(".ProseMirror-yjs-cursor")).toContainText(lin);
+  // What the server stored, read back: the text, and who changed it last.
+  await expect(admin.locator(".stored .prose")).toContainText(`${lin} too.`);
+  await expect(admin.locator(".stored dd").first()).toHaveText(lin);
 });
 
-test("[[ links a page, the link opens it, and the new page knows who links to it", async ({ browser }) => {
-  const page = await (await browser.newContext()).newPage();
-  await page.goto("/");
-  await page.getByLabel("Email").fill("ada@example.test");
-  await page.getByLabel("Password").fill("correct horse battery");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(editor(page)).toBeVisible();
-
-  await typeAtEnd(page, " See [[docs/install");
-  const option = page.getByRole("option", { name: "create docs/install" });
-  await expect(option).toBeVisible();
+test("[[ links a page, the link opens it, and the new page knows who links to it", async ({ browser }, testInfo) => {
+  const page = await account(browser, "Ada", "ada@example.test");
+  // A page no earlier attempt made, so the list offers to create it.
+  const name = `docs/install-${testInfo.repeatEachIndex}${testInfo.retry}`;
+  await typeAtEnd(page, ` See [[${name}`);
+  await expect(page.getByRole("option", { name: `create ${name}` })).toBeVisible();
   await page.keyboard.press("Enter");
-  const link = editor(page).locator("a.page-link", { hasText: "docs/install" });
+  const link = editor(page).locator("a.page-link", { hasText: name });
   await expect(link).toBeVisible();
 
   await link.click();
-  await expect(page).toHaveURL(/#docs%2Finstall$/);
-  await expect(editor(page).locator("h1")).toHaveText("docs/install");
+  await expect(page).toHaveURL(new RegExp(`#${encodeURIComponent(name)}$`));
+  await expect(editor(page).locator("h1")).toHaveText(name);
   await expect(page.locator(".backlinks")).toContainText("welcome");
-  await expect(page.getByRole("navigation", { name: "Pages" })).toContainText("install");
+  await expect(page.getByRole("navigation", { name: "Pages" })).toContainText(name.split("/")[1] as string);
 });

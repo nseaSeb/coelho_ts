@@ -1,4 +1,5 @@
 import { defineConfig } from "@playwright/test";
+import { fileURLToPath } from "node:url";
 
 // What jsdom cannot show: layout, the real clipboard, two browsers on one
 // server. Run with `pnpm e2e`, which builds what the servers serve.
@@ -14,7 +15,22 @@ export default defineConfig({
   ],
   webServer: [
     { command: "pnpm --filter coelho-demo exec vite --port 5190 --strictPort", url: "http://localhost:5190", reuseExistingServer: !process.env.CI },
-    // In memory: every run starts with no account, so the first sign-up is the admin.
-    { command: "node apps/notes/dist/server/main.js", url: "http://localhost:1240", env: { PORT: "1240" }, reuseExistingServer: false },
+    // In memory: every run starts with no account, so the first sign-up is
+    // the admin. Playwright hands the server the shell's environment with
+    // these on top, so each setting the server reads is set here: a
+    // DATABASE_URL exported for Docker must not send the tests to Postgres.
+    {
+      command: "node apps/notes/dist/server/main.js",
+      url: "http://localhost:1240",
+      reuseExistingServer: false,
+      env: {
+        PORT: "1240",
+        DATABASE_URL: "",
+        DEFAULT_ROLE: "reader",
+        SIGNUP: "open",
+        COOKIE_SECURE: "false",
+        STATIC_DIR: fileURLToPath(new URL("./apps/notes/dist/web", import.meta.url)),
+      },
+    },
   ],
 });

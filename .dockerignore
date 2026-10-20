@@ -4,3 +4,6 @@
 .github
 **/*.tsbuildinfo
 apps/demo
+playwright-report
+test-results
+e2e
