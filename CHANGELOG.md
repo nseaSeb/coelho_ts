@@ -8,6 +8,14 @@ The four packages are versioned together.
   compares two versions of a document block by block, by canonical bytes,
   and word by word inside a block of the same kind that was edited;
   `diffWords` compares two texts. Additions only.
+- **@nseaprotector/coelho-react**: a React node view can draw a node that
+  has content. The component renders its chrome (an icon, a select) in an
+  element of its own, beside the content, which stays ProseMirror's and is
+  edited like any other text; ProseMirror never reads what React draws, and
+  events in the chrome are the component's. Components receive
+  `updateAttributes`, which changes the node as one step of the history,
+  and the node's plain attributes are mirrored as `data-*` on its element
+  for a stylesheet to follow. Leaf node views work as before.
 
 ## 0.2.0 — 2026-10-20
 

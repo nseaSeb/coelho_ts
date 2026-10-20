@@ -5,6 +5,8 @@ import { CommentedEditor, type LiveThread } from "./Comments.js";
 
 // The default schema plus what an application adds: a mark with a class of
 // its own. The editor, the page and the validator all read this one object.
+const CALLOUT_KINDS = ["note", "tip", "warning"];
+
 const schema = extendSchema(defaultSchema(), {
   nodes: {
     // A mention is an ordinary node: inline, void, carrying what the page
@@ -20,9 +22,27 @@ const schema = extendSchema(defaultSchema(), {
       renderUntrusted: renderMention,
       toText: (node) => `@${String(node.attrs?.label ?? node.attrs?.id ?? "")}`,
     },
+    // A block with text inside and a kind: the editor draws its chrome with
+    // a React component (see CalloutChrome), the text stays editable, and the page
+    // renders it from here.
+    callout: {
+      content: "paragraph+",
+      group: "block",
+      attrs: { kind: { default: "note", validate: { oneOf: CALLOUT_KINDS }, renderAs: { class: { note: "callout-note", tip: "callout-tip", warning: "callout-warning" } } } },
+      class: "callout",
+      render: ["aside", []],
+      parse: [["aside", (attrs) => ({ kind: CALLOUT_KINDS.find((kind) => (attrs.class ?? "").includes(`callout-${kind}`)) ?? "note" })]],
+    },
   },
   marks: { highlight: { class: "hl", render: ["mark", []] } },
 });
+
+/** Obsidian writes a callout as a quote whose first line names its kind. */
+const markdownOptions = {
+  nodes: {
+    callout: (node: Node, inner: string) => `> [!${String(node.attrs?.kind ?? "note")}]\n${inner.split("\n").map((line) => (line === "" ? ">" : `> ${line}`)).join("\n")}`,
+  },
+};
 
 function renderMention(node: { attrs?: Record<string, unknown> }): string {
   const label = String(node.attrs?.label ?? node.attrs?.id ?? "");
@@ -205,7 +225,7 @@ export function App(): ReactNode {
           <pre>{JSON.stringify(liveThreads.map(({ orphaned, ...thread }) => ({ ...thread, ...(orphaned ? { orphaned } : {}) })), null, 2)}</pre>
         </Panel>
         <Panel title="Markdown" hint="toMarkdown(doc, schema) — and Markdown pasted into the editor arrives formatted (Shift-paste keeps it plain)">
-          <pre>{stored === null ? "" : toMarkdown(stored, schema)}</pre>
+          <pre>{stored === null ? "" : toMarkdown(stored, schema, markdownOptions)}</pre>
         </Panel>
         <Panel title="Plain text for a search index" hint="toText(doc, schema)">
           <pre>{stored === null ? "" : toText(stored, schema)}</pre>

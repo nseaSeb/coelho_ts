@@ -153,3 +153,17 @@ pre { margin: 0; padding: 10px; background: var(--code); border-radius: 6px; fon
 .ProseMirror-yjs-cursor > div { position: absolute; top: -1.15em; left: -1px; font-size: 11px; line-height: normal; font-weight: 600; color: #fff; padding: 0 4px; border-radius: 3px 3px 3px 0; white-space: nowrap; user-select: none; }
 .pane-threads { margin-top: 8px; }
 .pane-threads .thread { background: var(--panel); }
+
+/* Callouts: on the page, and in the editor with React's chrome */
+.callout { margin: 0.8em 0; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #3b82c4; background: rgba(59, 130, 196, 0.08); }
+.callout.callout-tip { border-left-color: var(--ok); background: rgba(45, 122, 62, 0.08); }
+.callout.callout-warning { border-left-color: #c9a227; background: rgba(201, 162, 39, 0.12); }
+.callout > :last-child { margin-bottom: 0; }
+.coelho-node-view-callout { display: grid; grid-template-columns: auto 1fr; gap: 0 10px; align-items: start; }
+.coelho-node-view-callout > .callout { margin: 0; }
+.coelho-node-view-callout .coelho-node-view-chrome { display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 10px; }
+.callout-icon { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--code); font-weight: 700; font-size: 13px; }
+.callout-kind { font: inherit; font-size: 11px; padding: 1px 2px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--ink); }
+.coelho-node-view-callout .coelho-node-view-content { border-radius: 6px; padding: 8px 12px; border-left: 4px solid #3b82c4; background: rgba(59, 130, 196, 0.08); }
+.coelho-node-view-callout[data-kind="tip"] .coelho-node-view-content { border-left-color: var(--ok); background: rgba(45, 122, 62, 0.08); }
+.coelho-node-view-callout[data-kind="warning"] .coelho-node-view-content { border-left-color: #c9a227; background: rgba(201, 162, 39, 0.12); }

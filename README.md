@@ -346,6 +346,23 @@ const nodeViews = { mention: MentionChip }; // stable: read once
 <CoelhoEditor schema={schema} nodeViews={nodeViews} value={value} onChange={setValue} />
 ```
 
+A node **with content** can be drawn by React too, its text still edited
+in place: the component renders its chrome beside the content, which stays
+ProseMirror's. The demo's callout is one: an icon and a choice of kind in
+React, the text editable, `updateAttributes({ kind })` undone like any
+change, and `[data-kind="warning"]` on the element for the stylesheet.
+
+```tsx
+function CalloutChrome({ node, updateAttributes }: NodeViewProps) {
+  return (
+    <select value={node.attrs.kind} onChange={(e) => updateAttributes({ kind: e.target.value })}>
+      <option value="note">Note</option>
+      <option value="warning">Warning</option>
+    </select>
+  );
+}
+```
+
 **Suggestions.** `@` for a mention, `/` for a block: the plugin says what
 is being typed (a trigger must start a word, so `a@b` is an address; the
 query ends at the first space; nothing opens in code), and the list is
@@ -434,7 +451,6 @@ under StrictMode), React node views, suggestions, anchored comments.
 
 1. `@nseaprotector/coelho-core`: `toJSON` of the schema in the shape coelho's browser
    hook expects.
-2. Node views with editable content (only leaf nodes today).
 3. Comments: render threads on the page (`toHtml` with highlights),
    mentions in comment bodies.
 4. coelho notes: unresolved links (pages linked to and never opened),

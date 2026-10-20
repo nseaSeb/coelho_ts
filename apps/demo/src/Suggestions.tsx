@@ -64,6 +64,7 @@ const blocks: Block[] = [
   { label: "Bullet list", hint: "-", command: (s) => (s.nodes.bullet_list ? wrapInList(s.nodes.bullet_list) : null) },
   { label: "Numbered list", hint: "1.", command: (s) => (s.nodes.ordered_list ? wrapInList(s.nodes.ordered_list) : null) },
   { label: "Quote", hint: ">", command: (s) => (s.nodes.blockquote ? wrapIn(s.nodes.blockquote) : null) },
+  { label: "Callout", hint: "[!note]", command: (s) => (s.nodes.callout ? wrapIn(s.nodes.callout) : null) },
   { label: "Code block", hint: "```", command: (s) => (s.nodes.code_block ? setBlockType(s.nodes.code_block) : null) },
   {
     label: "Divider",
@@ -124,5 +125,34 @@ export function Suggestions({ editor, keys }: { editor: CoelhoEditorHandle; keys
         )
       }
     </SuggestionMenu>
+  );
+}
+
+const KINDS: Record<string, { icon: string; label: string }> = {
+  note: { icon: "ℹ", label: "Note" },
+  tip: { icon: "✓", label: "Tip" },
+  warning: { icon: "!", label: "Warning" },
+};
+
+/**
+ * How the editor draws a callout: an icon and a choice of kind, drawn by
+ * React beside the callout's text, which stays editable. Changing the kind
+ * is a change of the document, undone like any other.
+ */
+export function CalloutChrome({ node, updateAttributes }: NodeViewProps): ReactNode {
+  const kind = String(node.attrs.kind);
+  return (
+    <>
+      <span className="callout-icon" aria-hidden="true">
+        {KINDS[kind]?.icon ?? "ℹ"}
+      </span>
+      <select className="callout-kind" aria-label="Callout kind" value={kind} onChange={(event) => updateAttributes({ kind: event.target.value })}>
+        {Object.entries(KINDS).map(([value, { label }]) => (
+          <option key={value} value={value}>
+            {label}
+          </option>
+        ))}
+      </select>
+    </>
   );
 }

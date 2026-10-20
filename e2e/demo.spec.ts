@@ -93,3 +93,27 @@ test("two writers: what one types reaches the other, with a named cursor", async
   for (const paragraph of await stored.all()) await expect(paragraph).toHaveText(/ Camille was here\.$/);
   await expect(page.locator(".stored .ok")).toContainText("Both would store the same document");
 });
+
+test("a callout: inserted from /, its text edited in place, its kind chosen in React's chrome", async ({ page }) => {
+  await caretAfter(page, "No HTML in the database.");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("/call");
+  await expect(page.getByRole("option", { name: /Callout/ })).toBeVisible();
+  await page.keyboard.press("Enter");
+  const callout = editor(page).locator(".coelho-node-view-callout");
+  await expect(callout).toHaveCount(1);
+  await page.keyboard.type("Back up first.");
+  await expect(callout.locator(".coelho-node-view-content")).toHaveText("Back up first.");
+
+  await callout.getByLabel("Callout kind").selectOption("warning");
+  await expect(callout).toHaveAttribute("data-kind", "warning");
+  await expect(panel(page, "Markdown")).toContainText("> [!warning]\n> Back up first.");
+  await expect(panel(page, "HTML source")).toContainText('<aside class="callout-warning callout"><p>Back up first.</p></aside>');
+
+  // Undo takes the kind back, as any change of the document.
+  await editor(page).locator(".coelho-node-view-content p").click();
+  await page.keyboard.press("ControlOrMeta+Z");
+  await expect(callout).toHaveAttribute("data-kind", "note");
+});
+

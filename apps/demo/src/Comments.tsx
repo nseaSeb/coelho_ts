@@ -4,7 +4,7 @@ import { CoelhoEditor, Toolbar, useCoelhoEditor } from "@nseaprotector/coelho-re
 import type { Schema } from "@nseaprotector/coelho-core";
 import type { Command } from "prosemirror-state";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { MentionChip, Suggestions } from "./Suggestions.js";
+import { CalloutChrome, MentionChip, Suggestions } from "./Suggestions.js";
 
 /**
  * What a comment may hold: paragraphs, line breaks, and four marks. Kept
@@ -38,7 +38,7 @@ export interface LiveThread extends Thread {
 const AUTHORS = ["Camille", "Sacha", "Dominique"];
 
 // Read once by the editor, so defined once.
-const nodeViews = { mention: MentionChip };
+const nodeViews = { mention: MentionChip, callout: CalloutChrome };
 
 interface Props {
   schema: Schema;
