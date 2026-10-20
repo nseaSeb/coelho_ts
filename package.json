@@ -1,0 +1,26 @@
+{
+  "name": "coelho-ts",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Structured rich text for TypeScript and React. A port of Coelho (Elixir): the document is the storage, never HTML.",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@10.8.1",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -b",
+    "lint": "eslint .",
+    "check": "pnpm typecheck && pnpm lint && pnpm test"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.28.0",
+    "@types/node": "22.15.21",
+    "eslint": "9.28.0",
+    "typescript": "5.8.3",
+    "typescript-eslint": "8.33.0",
+    "vitest": "3.2.4"
+  }
+}
