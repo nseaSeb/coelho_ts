@@ -23,6 +23,12 @@ export interface UseCoelhoEditorOptions {
    */
   onInvalid?: ((errors: ValidationError[]) => void) | undefined;
   /**
+   * Load a `value` that does not validate after repairing it with
+   * `sanitize`, rather than refusing it. `onInvalid` is still told what was
+   * wrong. The repaired document reaches `onChange` only once it is edited.
+   */
+  repair?: boolean | undefined;
+  /**
    * Plugins added after coelho's own, such as `commentsPlugin`. Read once,
    * when the editor is built: keep the array's identity stable.
    */
@@ -56,6 +62,8 @@ export function useCoelhoEditor(options: UseCoelhoEditorOptions): CoelhoEditor {
   onChangeRef.current = onChange;
   const onInvalidRef = useRef(onInvalid);
   onInvalidRef.current = onInvalid;
+  const repairRef = useRef(options.repair);
+  repairRef.current = options.repair;
   const valueRef = useRef(value);
   valueRef.current = value;
   // The last document handed to `onChange`. When it comes back as `value`,
@@ -71,10 +79,13 @@ export function useCoelhoEditor(options: UseCoelhoEditorOptions): CoelhoEditor {
 
   const load = useCallback(
     (document: CoelhoNode | null | undefined): Node | null => {
-      const loaded = toProseMirrorDoc(pmSchema, schema, document);
-      if (loaded.ok) return loaded.doc;
-      (onInvalidRef.current ?? reportInvalid)(loaded.errors);
-      return null;
+      const loaded = toProseMirrorDoc(pmSchema, schema, document, { repair: repairRef.current ?? false });
+      if (!loaded.ok) {
+        (onInvalidRef.current ?? reportInvalid)(loaded.errors);
+        return null;
+      }
+      if (loaded.repaired !== undefined) (onInvalidRef.current ?? reportRepaired)(loaded.repaired);
+      return loaded.doc;
     },
     [pmSchema, schema],
   );
@@ -132,4 +143,8 @@ export function useCoelhoEditor(options: UseCoelhoEditorOptions): CoelhoEditor {
 
 function reportInvalid(errors: ValidationError[]): void {
   console.error("coelho: the document given to the editor does not validate, and was not loaded", errors);
+}
+
+function reportRepaired(errors: ValidationError[]): void {
+  console.warn("coelho: the document given to the editor did not validate, and was repaired with sanitize", errors);
 }

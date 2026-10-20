@@ -160,4 +160,18 @@ describe("the demo", () => {
     act(() => button(container, "Another writer adds a paragraph at the top").click());
     expect(heading()).not.toBeNull();
   });
+
+  test("refuses a hostile stored row, shows what sanitize keeps, and loads the repair", () => {
+    const container = mount();
+    act(() => button(container, "Paste a hostile stored row").click());
+    act(() => button(container, "Load into the editor").click());
+    const refusal = container.querySelector(".refusal") as HTMLElement;
+    expect(refusal.querySelector(".errors")?.textContent).toContain('unknown node type "script"');
+    const preview = refusal.querySelector(".repaired") as HTMLElement;
+    expect(preview.innerHTML).toBe("<h1>Opening hours</h1><p>Open every day, book here.</p><p>Closed on 25 December.</p>");
+    act(() => button(container, "Load the repaired document").click());
+    const editable = container.querySelector(".workspace .ProseMirror") as HTMLElement;
+    expect(editable.textContent).toBe("Opening hoursOpen every day, book here.Closed on 25 December.");
+    expect(editable.innerHTML).not.toContain("javascript:");
+  });
 });

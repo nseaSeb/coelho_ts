@@ -1,4 +1,4 @@
-import { canonical, defaultSchema, extendSchema, hash, isBlank, reanchor, textLength, toHtml, toText, validate, type Node, type Thread } from "@coelho/core";
+import { canonical, defaultSchema, extendSchema, hash, isBlank, reanchor, sanitize, textLength, toHtml, toText, validate, type Node, type Thread } from "@coelho/core";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { CommentedEditor, type LiveThread } from "./Comments.js";
 
@@ -180,7 +180,7 @@ export function App(): ReactNode {
         <Panel title="Plain text for a search index" hint="toText(doc, schema)">
           <pre>{stored === null ? "" : toText(stored, schema)}</pre>
         </Panel>
-        <Panel title="Replace the stored document" hint="paste JSON here: the editor is controlled, and a hostile document is refused">
+        <Panel title="Replace the stored document" hint="paste JSON: validate refuses what the schema does not allow; sanitize repairs it, the way a stored row is read back for a page">
           <JsonInput value={value} onChange={setValue} />
         </Panel>
       </div>
@@ -188,24 +188,53 @@ export function App(): ReactNode {
   );
 }
 
+// A row as it might come back from a database years later: written by an
+// older editor, touched by a script, stamped with a version that moved on.
+const hostileRow = {
+  type: "doc",
+  schema_version: 1,
+  content: [
+    { type: "heading", attrs: { level: 99 }, onclick: "steal()", content: [{ type: "text", text: "Opening hours" }] },
+    {
+      type: "paragraph",
+      content: [
+        { type: "text", text: "Open every day, " },
+        { type: "text", text: "book here", marks: [{ type: "link", attrs: { href: "javascript:alert(1)" } }, { type: "blink" }] },
+        { type: "text", text: "." },
+        { type: "image", attrs: { alt: "a logo with no src" } },
+      ],
+    },
+    { type: "script", content: [{ type: "text", text: "alert(document.cookie)" }] },
+    { type: "bullet_list", content: [] },
+    { type: "paragraph", content: [{ type: "text", text: "Closed on 25 December." }] },
+  ],
+};
+
+interface Refusal {
+  parsed: unknown;
+  errors: string[];
+}
+
 function JsonInput({ value, onChange }: { value: Node; onChange: (node: Node) => void }): ReactNode {
   const [text, setText] = useState(() => JSON.stringify(value));
+  const [refusal, setRefusal] = useState<Refusal | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   useEffect(() => setText(JSON.stringify(value)), [value]);
   const apply = (): void => {
+    setRefusal(null);
+    setProblem(null);
+    let parsed: unknown;
     try {
-      const parsed = JSON.parse(text) as unknown;
-      const checked = validate(parsed, schema);
-      if (!checked.ok) {
-        setProblem(checked.errors.map((e) => `${e.path.join(".") || "document"}: ${e.message}`).join("\n"));
-        return;
-      }
-      setProblem(null);
-      onChange(checked.document);
+      parsed = JSON.parse(text) as unknown;
     } catch (error) {
       setProblem((error as Error).message);
+      return;
     }
+    const checked = validate(parsed, schema);
+    if (checked.ok) onChange(checked.document);
+    else setRefusal({ parsed, errors: checked.errors.map((e) => `${e.path.join(".") || "document"}: ${e.message}`) });
   };
+  const repaired = refusal === null ? null : sanitize(refusal.parsed, schema);
   return (
     <div className="json-input">
       <textarea value={text} onChange={(event) => setText(event.target.value)} spellCheck={false} />
@@ -213,21 +242,32 @@ function JsonInput({ value, onChange }: { value: Node; onChange: (node: Node) =>
         <button type="button" onClick={apply}>
           Load into the editor
         </button>
-        <button
-          type="button"
-          onClick={() =>
-            setText(
-              JSON.stringify({
-                type: "doc",
-                content: [{ type: "paragraph", content: [{ type: "text", text: "click me", marks: [{ type: "link", attrs: { href: "javascript:alert(1)" } }] }] }],
-              }),
-            )
-          }
-        >
-          Paste a hostile document
+        <button type="button" onClick={() => setText(JSON.stringify(hostileRow, null, 1))}>
+          Paste a hostile stored row
         </button>
       </div>
       {problem === null ? null : <pre className="errors">{problem}</pre>}
+      {refusal === null || repaired === null ? null : (
+        <div className="refusal">
+          <p>
+            <strong>validate</strong> refuses it, and says where:
+          </p>
+          <pre className="errors">{refusal.errors.join("\n")}</pre>
+          <p>
+            <strong>sanitize</strong> repairs it instead: what the schema does not know goes, the rest stays. Rendered:
+          </p>
+          <div className="prose repaired" dangerouslySetInnerHTML={{ __html: toHtml(repaired, schema) }} />
+          <button
+            type="button"
+            onClick={() => {
+              onChange(repaired);
+              setRefusal(null);
+            }}
+          >
+            Load the repaired document
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -224,6 +224,7 @@ function buildVersion(version: number | undefined): number | null {
 export function buildLimits(base: Limits, given: Partial<Limits> | undefined): Limits {
   const out = { ...base };
   for (const key of Object.keys(given ?? {}) as (keyof Limits)[]) {
+    if (!Object.hasOwn(base, key)) throw new Error(`unknown limit ${JSON.stringify(key)}; known: ${Object.keys(base).join(", ")}`);
     const value = given?.[key];
     if (value === undefined) continue;
     if (value !== Infinity && (!Number.isInteger(value) || value <= 0)) {
@@ -232,6 +233,24 @@ export function buildLimits(base: Limits, given: Partial<Limits> | undefined): L
     out[key] = value;
   }
   return out;
+}
+
+/**
+ * The smallest document the schema accepts: the top node alone when its
+ * content may be empty, otherwise the top node holding the first node, in
+ * declaration order, that needs no children and no attribute.
+ */
+export function emptyDocument(schema: Schema): Node {
+  const document: Node = { type: schema.topNode };
+  const top = schema.nodes.get(schema.topNode) as NodeSpec;
+  if (top.contentSource === null || contentMatches(schema, top, [])) return document;
+  const child = schema.nodeOrder.find((name) => {
+    const spec = schema.nodes.get(name) as NodeSpec;
+    const childless = spec.contentSource === null || contentMatches(schema, spec, []);
+    const needsNoAttr = Object.values(spec.attrs).every((attr) => !attr.required);
+    return !spec.text && childless && needsNoAttr && contentMatches(schema, top, [name]);
+  });
+  return child === undefined ? document : { ...document, content: [{ type: child }] };
 }
 
 export function nodeSpec(schema: Schema, name: string): NodeSpec | undefined {

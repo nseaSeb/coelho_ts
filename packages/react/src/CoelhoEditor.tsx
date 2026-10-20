@@ -11,14 +11,16 @@ export interface CoelhoEditorProps {
   onChange?: (document: CoelhoNode) => void;
   /** Called when `value` does not validate; see `useCoelhoEditor`. */
   onInvalid?: (errors: ValidationError[]) => void;
+  /** Repair a `value` that does not validate instead of refusing it; see `useCoelhoEditor`. */
+  repair?: boolean;
   /** Replaces the default toolbar; `null` removes it. */
   toolbar?: ((editor: Editor) => ReactNode) | null;
   className?: string;
 }
 
 /** React owns this element and the toolbar; ProseMirror owns the editable element inside. */
-export function CoelhoEditor({ schema, value, onChange, onInvalid, toolbar, className }: CoelhoEditorProps): ReactNode {
-  const editor = useCoelhoEditor({ schema, value, onChange, onInvalid });
+export function CoelhoEditor({ schema, value, onChange, onInvalid, repair, toolbar, className }: CoelhoEditorProps): ReactNode {
+  const editor = useCoelhoEditor({ schema, value, onChange, onInvalid, repair });
   return (
     <div className={className ?? "coelho-editor"}>
       {toolbar === null ? null : toolbar === undefined ? <Toolbar editor={editor} /> : toolbar(editor)}

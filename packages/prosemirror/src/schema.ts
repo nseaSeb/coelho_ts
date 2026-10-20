@@ -1,5 +1,6 @@
 import {
   renderDom,
+  sanitize,
   validate,
   validateAttr,
   type Attr,
@@ -33,7 +34,17 @@ export function toProseMirrorSchema(schema: CoelhoSchema): Schema {
   return new Schema({ topNode: schema.topNode, nodes, marks });
 }
 
-export type LoadResult = { ok: true; doc: Node } | { ok: false; errors: ValidationError[] };
+export type LoadResult = { ok: true; doc: Node; repaired?: ValidationError[] } | { ok: false; errors: ValidationError[] };
+
+export interface LoadOptions {
+  /**
+   * Load a document that does not validate after putting it through
+   * `sanitize`, instead of refusing it. The result then says what was wrong
+   * in `repaired`. For rows written under an older or looser schema: an
+   * editor that refuses them shows nothing, and saving it loses everything.
+   */
+  repair?: boolean;
+}
 
 /**
  * Turns a stored document into an editor document, or says why it cannot.
@@ -41,14 +52,15 @@ export type LoadResult = { ok: true; doc: Node } | { ok: false; errors: Validati
  * type and silently accepts content its parent does not allow, and neither
  * belongs in an editor. `null` is the empty document.
  */
-export function toProseMirrorDoc(pmSchema: Schema, schema: CoelhoSchema, value: unknown): LoadResult {
+export function toProseMirrorDoc(pmSchema: Schema, schema: CoelhoSchema, value: unknown, options: LoadOptions = {}): LoadResult {
   if (value === null || value === undefined) return { ok: true, doc: pmSchema.topNodeType.createAndFill() as Node };
   const result = validate(value, schema);
-  if (!result.ok) return result;
+  if (!result.ok && !options.repair) return result;
+  const document = result.ok ? result.document : sanitize(value, schema);
   try {
-    const doc = Node.fromJSON(pmSchema, result.document);
+    const doc = Node.fromJSON(pmSchema, document);
     doc.check();
-    return { ok: true, doc };
+    return result.ok ? { ok: true, doc } : { ok: true, doc, repaired: result.errors };
   } catch (error) {
     return { ok: false, errors: [{ path: [], message: (error as Error).message }] };
   }
@@ -128,10 +140,10 @@ function parseRules(spec: CoelhoNodeSpec | CoelhoMarkSpec, inline: boolean): Tag
       ...whitespace,
       getAttrs: (dom: HTMLElement) => {
         const raw = dom.getAttribute(DATA_ATTRS);
-        if (raw === null) return sanitize(spec, {});
+        if (raw === null) return holdAttrs(spec, {});
         try {
           const given = JSON.parse(raw) as unknown;
-          return typeof given === "object" && given !== null && !Array.isArray(given) ? sanitize(spec, given as Record<string, unknown>) : false;
+          return typeof given === "object" && given !== null && !Array.isArray(given) ? holdAttrs(spec, given as Record<string, unknown>) : false;
         } catch {
           return false;
         }
@@ -150,7 +162,7 @@ function parseRules(spec: CoelhoNodeSpec | CoelhoMarkSpec, inline: boolean): Tag
         const given: Record<string, unknown> = custom === null ? {} : { ...custom(domAttrs) };
         if (custom === null) for (const name of Object.keys(spec.attrs)) if (name in domAttrs) given[name] = domAttrs[name];
         if (heading !== null && "level" in spec.attrs && !("level" in given)) given.level = Number(heading[1]);
-        return sanitize(spec, given);
+        return holdAttrs(spec, given);
       },
     });
   }
@@ -162,7 +174,7 @@ function parseRules(spec: CoelhoNodeSpec | CoelhoMarkSpec, inline: boolean): Tag
  * is dropped so the default applies, and a required one failing refuses
  * the rule, so a pasted `javascript:` link becomes plain text.
  */
-function sanitize(spec: CoelhoNodeSpec | CoelhoMarkSpec, given: Record<string, unknown>): Attrs | false {
+function holdAttrs(spec: CoelhoNodeSpec | CoelhoMarkSpec, given: Record<string, unknown>): Attrs | false {
   const out: Attrs = {};
   for (const [name, attr] of Object.entries(spec.attrs)) {
     const value = given[name] === undefined ? undefined : coerce(attr, given[name]);

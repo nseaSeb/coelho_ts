@@ -26,7 +26,7 @@ sits behind the editor. This project separates the two:
 
 | Package | What | Status |
 | --- | --- | --- |
-| `@coelho/core` | schema, `validate`, `canonical`, `hash`, `toHtml`, `toInlineHtml`, `toText`, `isBlank`, trusted/untrusted rendering policy | parity with coelho on every fixture |
+| `@coelho/core` | schema, `validate`, `sanitize`, `canonical`, `hash`, `toHtml`, `toInlineHtml`, `toText`, `isBlank`, trusted/untrusted rendering policy, anchors | parity with coelho on every fixture |
 | `@coelho/prosemirror` | coelho schema → ProseMirror `Schema`, editing plugins, anchored comments plugin | working |
 | `@coelho/react` | `<CoelhoEditor>`, `useCoelhoEditor`, default toolbar | working |
 
@@ -52,6 +52,25 @@ toHtml(stored, schema);                  // the page
 toHtml(stored, schema, { policy: "untrusted" }); // a stranger's comment, links and images reduced to text
 toText(stored, schema);                  // what a search index holds
 ```
+
+### Two boundaries
+
+`validate` is the boundary at the keyboard: strict, it refuses and says
+where. `sanitize` is the boundary at the screen: a stored row is not
+revalidated when it is read, so one written under an older or looser
+schema, or by a direct SQL write, goes through it before a page shows it.
+
+```ts
+const row = await db.posts.find(id);
+toHtml(sanitize(row.body, schema), schema);
+sanitize(row.body, schema, { limits: { maxTextLength: Infinity } }); // clean the structure, keep the length
+```
+
+It never fails and never raises. An unknown key or a failing attribute is
+dropped, a forbidden mark goes and its text stays, an unknown node goes
+with its text, a document over its bounds is cut to fit, and what cannot
+be repaired becomes the empty document. Sanitising twice is sanitising
+once. The editor can load a row through it too: `useCoelhoEditor({ repair: true })`.
 
 ### Your own schema
 
@@ -118,8 +137,7 @@ Node 20+, pnpm 10.
 
 ## Roadmap
 
-1. `@coelho/core`: `sanitize` (repair instead of refuse, for what is
-   already stored), Markdown rendering, `toJSON` of the schema in the
+1. `@coelho/core`: Markdown rendering, `toJSON` of the schema in the
    shape coelho's browser hook expects.
 2. `@coelho/prosemirror`: build the ProseMirror schema from a coelho
    schema; same input rules and suggestion triggers as the Phoenix hook.

@@ -1,5 +1,5 @@
 import { sameJson, validateAttr } from "./attr.js";
-import { contentMatches, markAllowed, markIndex, markSpec, nodeSpec, specOf, type Schema } from "./schema.js";
+import { buildLimits, contentMatches, emptyDocument, markAllowed, markIndex, markSpec, nodeSpec, specOf, type Schema } from "./schema.js";
 import type { Attr, Attrs, Document, JsonValue, Limits, Mark, MarkSpec, Node, NodeSpec, ValidationError } from "./types.js";
 
 export type ValidationResult = { ok: true; document: Document } | { ok: false; errors: ValidationError[] };
@@ -250,12 +250,209 @@ function mergeText(children: Node[]): Node[] {
   return out;
 }
 
+export interface SanitizeOptions {
+  /**
+   * Overrides the schema's limits for this call alone. A bound is a bound
+   * on writing; reading what is already stored is a different question, and
+   * cutting it to fit loses text nobody asked to lose:
+   * `{ maxTextLength: Infinity, maxAttrLength: Infinity }` keeps the
+   * structure cleaned and the length alone.
+   */
+  limits?: Partial<Limits>;
+}
+
+/** How many times a document is pruned and revalidated before it is given up on. */
+const SANITIZE_PASSES = 8;
+
+/**
+ * Turns anything into a document the schema accepts, without failing.
+ *
+ * `validate` is the boundary at the keyboard: it says no, and says where.
+ * This is the boundary at the screen. A stored document is not revalidated
+ * when it is read, so a row written under a looser schema, by a direct SQL
+ * write, or by an older version of the application would otherwise reach a
+ * page unchecked. What falls outside the schema is removed, from the
+ * gentlest repair to the harshest:
+ *
+ * - a key the schema does not know is dropped;
+ * - an attribute failing its validator is dropped, so the default applies;
+ * - a mark that is unknown, not allowed, or whose attributes fail is
+ *   dropped, and the text it covered stays;
+ * - a node whose type is unknown, or whose content cannot satisfy its
+ *   expression, is dropped whole, with the text inside it;
+ * - a document over the schema's bounds is cut to fit them;
+ * - what cannot be repaired at all becomes the empty document.
+ *
+ * A document stamped with another schema version is repaired against this
+ * one and restamped. It is idempotent: sanitising twice is sanitising once,
+ * and a document that validates comes back normalised and unchanged.
+ */
+export function sanitize(document: unknown, schema: Schema, options: SanitizeOptions = {}): Document {
+  const bounded = options.limits === undefined ? schema : { ...schema, limits: buildLimits(schema.limits, options.limits) };
+  const [trimmed] = trim(reshape(document, bounded.limits.maxDepth, 0), bounded.limits, { nodes: 0, text: 0 });
+  return repair(trimmed ?? {}, bounded, SANITIZE_PASSES);
+}
+
+function repair(document: unknown, schema: Schema, passes: number): Document {
+  const result = validate(document, schema);
+  if (result.ok) return result.document;
+  if (passes <= 0) return emptyFor(schema);
+  const pruned = prune(document as Node, result.errors, "gently");
+  if (pruned === "root") return emptyFor(schema);
+  if (!sameJson(pruned, document)) return repair(pruned, schema, passes - 1);
+  // Nothing an error path names could be removed gently, typically a
+  // required attribute that is missing: the node carrying it goes instead.
+  const harsher = prune(document as Node, result.errors, "node");
+  if (harsher === "root" || sameJson(harsher, document)) return emptyFor(schema);
+  return repair(harsher, schema, passes - 1);
+}
+
+function emptyFor(schema: Schema): Document {
+  const result = validate(emptyDocument(schema), schema);
+  return result.ok ? result.document : ({ type: schema.topNode } as Document);
+}
+
+/** Keeps only what a node or a mark can carry, in the shape it must carry it. */
+function reshape(node: unknown, maxDepth: number, depth: number): Record<string, unknown> {
+  if (!isObject(node) || depth > maxDepth) return {};
+  const out: Record<string, unknown> = {};
+  for (const key of NODE_KEYS) if (Object.hasOwn(node, key)) out[key] = node[key];
+  if (Object.hasOwn(out, "attrs") && !isObject(out.attrs)) out.attrs = {};
+  if (Object.hasOwn(out, "marks")) {
+    out.marks = Array.isArray(out.marks) ? out.marks.map(reshapeMark) : [];
+  }
+  if (Object.hasOwn(out, "content")) {
+    if (Array.isArray(out.content)) {
+      out.content = out.content.map((child) => reshape(child, maxDepth, depth + 1)).filter((child) => Object.keys(child).length > 0);
+    } else {
+      delete out.content;
+    }
+  }
+  return out;
+}
+
+function reshapeMark(mark: unknown): Record<string, unknown> {
+  if (!isObject(mark)) return {};
+  const out: Record<string, unknown> = {};
+  for (const key of MARK_KEYS) if (Object.hasOwn(mark, key)) out[key] = mark[key];
+  if (Object.hasOwn(out, "attrs") && !isObject(out.attrs)) out.attrs = {};
+  return out;
+}
+
+interface Count {
+  nodes: number;
+  text: number;
+}
+
+/** Cuts a document to its bounds: nodes past `maxNodes` go, text past `maxTextLength` is truncated. */
+function trim(node: Record<string, unknown>, limits: Limits, count: Count): [Record<string, unknown> | null, Count] {
+  if (count.nodes + 1 > limits.maxNodes) return [null, count];
+  const room = limits.maxTextLength === Infinity ? Infinity : Math.max(limits.maxTextLength - count.text, 0);
+  let out = node;
+  let next: Count = { nodes: count.nodes + 1, text: count.text };
+  if (typeof node.text === "string") {
+    if (room === 0) return [null, count];
+    const length = characters(node.text);
+    if (length <= room) {
+      next = { nodes: next.nodes, text: next.text + length };
+    } else {
+      out = { ...node, text: firstCharacters(node.text, room) };
+      next = { nodes: next.nodes, text: next.text + room };
+    }
+  }
+  if (!Array.isArray(out.content)) return [out, next];
+  const kept: Record<string, unknown>[] = [];
+  for (const child of out.content as Record<string, unknown>[]) {
+    const [trimmed, after] = trim(child, limits, next);
+    next = after;
+    if (trimmed !== null) kept.push(trimmed);
+  }
+  return [{ ...out, content: kept }, next];
+}
+
+type Action = { kind: "dropAttr"; key: string } | { kind: "dropAttrs" } | { kind: "dropMark"; index: number } | { kind: "dropMarks" } | { kind: "dropChild"; index: number };
+type Operation = { path: number[]; action: Action };
+
+/**
+ * Turns each error into the smallest removal that addresses it, and applies
+ * them all at once. `"node"` removes the node an error is about instead.
+ * An error about the top node itself is no instruction; only when every
+ * error is one does the whole document go.
+ */
+function prune(document: Node, errors: ValidationError[], how: "gently" | "node"): Node | "root" {
+  const operations: Operation[] = [];
+  for (const error of errors) {
+    const operation = instruction(error.path, how);
+    if (operation !== null) operations.push(operation);
+  }
+  return operations.length === 0 ? "root" : applyOperations(document, operations);
+}
+
+function instruction(path: Array<string | number>, how: "gently" | "node"): Operation | null {
+  const indices: number[] = [];
+  let i = 0;
+  while (path[i] === "content" && typeof path[i + 1] === "number") {
+    indices.push(path[i + 1] as number);
+    i += 2;
+  }
+  const tail = path.slice(i);
+  if (how === "gently") {
+    if (tail[0] === "attrs" && tail.length === 2) return { path: indices, action: { kind: "dropAttr", key: String(tail[1]) } };
+    if (tail[0] === "attrs" && tail.length === 1) return { path: indices, action: { kind: "dropAttrs" } };
+    if (tail[0] === "marks" && typeof tail[1] === "number") return { path: indices, action: { kind: "dropMark", index: tail[1] } };
+    if (tail[0] === "marks") return { path: indices, action: { kind: "dropMarks" } };
+  }
+  if (indices.length === 0) return null;
+  return { path: indices.slice(0, -1), action: { kind: "dropChild", index: indices[indices.length - 1] as number } };
+}
+
+function applyOperations(node: Node, operations: Operation[]): Node {
+  const here = operations.filter((operation) => operation.path.length === 0).map((operation) => operation.action);
+  const deeper = operations.filter((operation) => operation.path.length > 0);
+  let out: Node = { ...node };
+
+  if (here.some((action) => action.kind === "dropAttrs")) delete out.attrs;
+  if (here.some((action) => action.kind === "dropMarks")) delete out.marks;
+  const droppedAttrs = new Set(here.flatMap((action) => (action.kind === "dropAttr" ? [action.key] : [])));
+  if (out.attrs !== undefined && droppedAttrs.size > 0) {
+    out.attrs = Object.fromEntries(Object.entries(out.attrs).filter(([key]) => !droppedAttrs.has(key)));
+  }
+  const droppedMarks = new Set(here.flatMap((action) => (action.kind === "dropMark" ? [action.index] : [])));
+  if (out.marks !== undefined && droppedMarks.size > 0) out.marks = out.marks.filter((_, index) => !droppedMarks.has(index));
+
+  if (out.content !== undefined && deeper.length > 0) {
+    out = {
+      ...out,
+      content: out.content.map((child, index) => {
+        const mine = deeper.filter((operation) => operation.path[0] === index).map((operation) => ({ ...operation, path: operation.path.slice(1) }));
+        return mine.length === 0 ? child : applyOperations(child, mine);
+      }),
+    };
+  }
+  const droppedChildren = new Set(here.flatMap((action) => (action.kind === "dropChild" ? [action.index] : [])));
+  if (out.content !== undefined && droppedChildren.size > 0) out.content = out.content.filter((_, index) => !droppedChildren.has(index));
+  return out;
+}
+
 let segmenter: Intl.Segmenter | undefined;
 
 /** Characters as a person counts them: graphemes, so a flag or a family is one. */
 export function characters(text: string): number {
   segmenter ??= new Intl.Segmenter(undefined, { granularity: "grapheme" });
   return [...segmenter.segment(text)].length;
+}
+
+/** The first `count` characters, counted as `characters` counts them, so a flag is never cut in half. */
+function firstCharacters(text: string, count: number): string {
+  segmenter ??= new Intl.Segmenter(undefined, { granularity: "grapheme" });
+  let out = "";
+  let taken = 0;
+  for (const { segment } of segmenter.segment(text)) {
+    if (taken === count) break;
+    out += segment;
+    taken += 1;
+  }
+  return out;
 }
 
 /** The characters of text in a document, what an editor's counter shows. */

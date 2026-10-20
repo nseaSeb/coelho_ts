@@ -96,6 +96,13 @@ describe("loading a stored document", () => {
     expect(toProseMirrorDoc(pm, schema, { type: "doc", content: [] }).ok).toBe(false);
   });
 
+  test("repairs what does not, when asked, and says what was wrong", () => {
+    const stored = { type: "doc", content: [{ type: "script", content: [{ type: "text", text: "x" }] }, { type: "paragraph", content: [{ type: "text", text: "kept" }] }] };
+    const loaded = toProseMirrorDoc(pm, schema, stored, { repair: true });
+    expect(loaded.ok && loaded.doc.textContent).toBe("kept");
+    expect(loaded.ok && loaded.repaired?.[0]?.message).toBe('unknown node type "script"');
+  });
+
   test("loads what does, and an absent document as empty", () => {
     const loaded = toProseMirrorDoc(pm, schema, { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "hi" }] }] });
     expect(loaded.ok && loaded.doc.textContent).toBe("hi");
