@@ -1,4 +1,4 @@
-import type { Node as CoelhoNode, Schema as CoelhoSchema } from "@coelho/core";
+import type { Node as CoelhoNode, Schema as CoelhoSchema, ValidationError } from "@coelho/core";
 import { setBlockType, toggleMark, wrapIn, wrapInList } from "@coelho/prosemirror";
 import type { MarkType, NodeType } from "prosemirror-model";
 import type { Command, EditorState } from "prosemirror-state";
@@ -9,14 +9,16 @@ export interface CoelhoEditorProps {
   schema: CoelhoSchema;
   value?: CoelhoNode | null;
   onChange?: (document: CoelhoNode) => void;
+  /** Called when `value` does not validate; see `useCoelhoEditor`. */
+  onInvalid?: (errors: ValidationError[]) => void;
   /** Replaces the default toolbar; `null` removes it. */
   toolbar?: ((editor: Editor) => ReactNode) | null;
   className?: string;
 }
 
 /** React owns this element and the toolbar; ProseMirror owns the editable element inside. */
-export function CoelhoEditor({ schema, value, onChange, toolbar, className }: CoelhoEditorProps): ReactNode {
-  const editor = useCoelhoEditor({ schema, value, onChange });
+export function CoelhoEditor({ schema, value, onChange, onInvalid, toolbar, className }: CoelhoEditorProps): ReactNode {
+  const editor = useCoelhoEditor({ schema, value, onChange, onInvalid });
   return (
     <div className={className ?? "coelho-editor"}>
       {toolbar === null ? null : toolbar === undefined ? <Toolbar editor={editor} /> : toolbar(editor)}
@@ -53,9 +55,16 @@ function Button({ editor, label, title, command, active }: ButtonProps): ReactNo
       title={title}
       disabled={!enabled}
       aria-pressed={active ?? false}
+      // The mouse acts on press, before the editor loses its selection; a
+      // keyboard activation only ever fires `click`, with no press before it.
       onMouseDown={(event) => {
         event.preventDefault();
         if (view !== null) command(view.state, view.dispatch, view);
+      }}
+      onClick={(event) => {
+        if (event.detail !== 0 || view === null) return;
+        command(view.state, view.dispatch, view);
+        view.focus();
       }}
     >
       {label}

@@ -1,16 +1,27 @@
-import { canonical, type Node as CoelhoNode, type Schema as CoelhoSchema } from "@coelho/core";
-import { coelhoPlugins, toProseMirrorSchema } from "@coelho/prosemirror";
-import { Node, type Schema } from "prosemirror-model";
+import { canonical, type Node as CoelhoNode, type Schema as CoelhoSchema, type ValidationError } from "@coelho/core";
+import { coelhoPlugins, toProseMirrorDoc, toProseMirrorSchema } from "@coelho/prosemirror";
+import type { Node, Schema } from "prosemirror-model";
 import { EditorState, type Transaction } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 export interface UseCoelhoEditorOptions {
+  /**
+   * The schema the editor is built from. Keep its identity stable — define
+   * it at module level or memoize it: a new schema object rebuilds the
+   * editor, and with it the selection, the focus and the undo history.
+   */
   schema: CoelhoSchema;
   /** The document to show. When it changes to something the editor does not hold, the editor is reset to it. */
   value?: CoelhoNode | null | undefined;
   /** Called with `doc.toJSON()` after every transaction that changed the document. */
   onChange?: ((document: CoelhoNode) => void) | undefined;
+  /**
+   * Called when `value` does not validate against the schema. The editor
+   * then starts empty, or keeps what it holds, instead of loading it.
+   * Defaults to a `console.error`.
+   */
+  onInvalid?: ((errors: ValidationError[]) => void) | undefined;
 }
 
 export interface CoelhoEditor {
@@ -30,12 +41,19 @@ export interface CoelhoEditor {
  * re-renders on selection changes without owning the view.
  */
 export function useCoelhoEditor(options: UseCoelhoEditorOptions): CoelhoEditor {
-  const { schema, value, onChange } = options;
+  const { schema, value, onChange, onInvalid } = options;
   const pmSchema = useMemo(() => toProseMirrorSchema(schema), [schema]);
   const viewRef = useRef<EditorView | null>(null);
   const listeners = useRef(new Set<() => void>());
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const onInvalidRef = useRef(onInvalid);
+  onInvalidRef.current = onInvalid;
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  // The last document handed to `onChange`. When it comes back as `value`,
+  // the editor already holds it and nothing needs comparing.
+  const lastEmitted = useRef<CoelhoNode | null>(null);
   const [, setMounted] = useState(0);
 
   const subscribe = useCallback((listener: () => void) => {
@@ -43,6 +61,16 @@ export function useCoelhoEditor(options: UseCoelhoEditorOptions): CoelhoEditor {
     return () => listeners.current.delete(listener);
   }, []);
   const state = useSyncExternalStore(subscribe, () => viewRef.current?.state ?? null, () => null);
+
+  const load = useCallback(
+    (document: CoelhoNode | null | undefined): Node | null => {
+      const loaded = toProseMirrorDoc(pmSchema, schema, document);
+      if (loaded.ok) return loaded.doc;
+      (onInvalidRef.current ?? reportInvalid)(loaded.errors);
+      return null;
+    },
+    [pmSchema, schema],
+  );
 
   const ref = useCallback(
     (element: HTMLElement | null) => {
@@ -56,34 +84,45 @@ export function useCoelhoEditor(options: UseCoelhoEditorOptions): CoelhoEditor {
         if (view === null) return;
         view.updateState(view.state.apply(tr));
         for (const listener of listeners.current) listener();
-        if (tr.docChanged) onChangeRef.current?.(view.state.doc.toJSON() as CoelhoNode);
+        if (tr.docChanged) {
+          const json = view.state.doc.toJSON() as CoelhoNode;
+          lastEmitted.current = json;
+          onChangeRef.current?.(json);
+        }
       };
+      const doc = load(valueRef.current) ?? (pmSchema.topNodeType.createAndFill() as Node);
       viewRef.current = new EditorView(element, {
-        state: EditorState.create({ doc: docFrom(pmSchema, value), plugins: coelhoPlugins(pmSchema) }),
+        state: EditorState.create({ doc, plugins: coelhoPlugins(pmSchema) }),
         dispatchTransaction,
       });
       setMounted((n) => n + 1);
     },
-    // The view is built once per schema; `value` is handled by the effect below.
-    [pmSchema],
+    [pmSchema, load],
   );
 
   useEffect(() => {
     const view = viewRef.current;
-    if (view === null || value === undefined) return;
-    if (canonical(view.state.doc.toJSON()) === canonical(value ?? emptyDoc(pmSchema))) return;
-    view.updateState(EditorState.create({ doc: docFrom(pmSchema, value), plugins: view.state.plugins }));
+    if (view === null || value === undefined || value === lastEmitted.current) return;
+    if (value !== null && canonical(view.state.doc.toJSON()) === canonical(value)) return;
+    const doc = load(value);
+    if (doc === null) return;
+    view.updateState(EditorState.create({ doc, plugins: view.state.plugins }));
     for (const listener of listeners.current) listener();
-  }, [value, pmSchema]);
+  }, [value, load]);
+
+  const previousSchema = useRef(schema);
+  useEffect(() => {
+    if (previousSchema.current === schema) return;
+    previousSchema.current = schema;
+    console.warn(
+      "coelho: the schema passed to the editor changed identity, so the editor was rebuilt and lost its selection and history. " +
+        "Define the schema outside the component, or memoize it.",
+    );
+  }, [schema]);
 
   return { ref, view: viewRef.current, state, pmSchema };
 }
 
-function docFrom(pmSchema: Schema, value: CoelhoNode | null | undefined): Node {
-  if (value === null || value === undefined) return pmSchema.topNodeType.createAndFill() as Node;
-  return Node.fromJSON(pmSchema, value);
-}
-
-function emptyDoc(pmSchema: Schema): CoelhoNode {
-  return (pmSchema.topNodeType.createAndFill() as Node).toJSON() as CoelhoNode;
+function reportInvalid(errors: ValidationError[]): void {
+  console.error("coelho: the document given to the editor does not validate, and was not loaded", errors);
 }

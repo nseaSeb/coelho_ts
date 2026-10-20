@@ -6,7 +6,7 @@ import { inputRules, textblockTypeInputRule, wrappingInputRule } from "prosemirr
 import { keymap } from "prosemirror-keymap";
 import type { Schema } from "prosemirror-model";
 import { splitListItem, wrapInList } from "prosemirror-schema-list";
-import type { Plugin } from "prosemirror-state";
+import type { Command, Plugin } from "prosemirror-state";
 
 /**
  * The editing behaviour the Phoenix hook ships: history, the base keymap,
@@ -29,13 +29,7 @@ export function coelhoPlugins(schema: Schema): Plugin[] {
   mark("underline", "Mod-u");
   mark("code", "Mod-`");
   if (schema.nodes.list_item !== undefined) keys.Enter = splitListItem(schema.nodes.list_item);
-  if (schema.nodes.hard_break !== undefined) {
-    const br = schema.nodes.hard_break;
-    keys["Shift-Enter"] = (state, dispatch) => {
-      dispatch?.(state.tr.replaceSelectionWith(br.create()).scrollIntoView());
-      return true;
-    };
-  }
+  keys["Shift-Enter"] = insertHardBreak(schema);
 
   const rules = [];
   if (schema.nodes.heading !== undefined) {
@@ -56,6 +50,25 @@ export function coelhoPlugins(schema: Schema): Plugin[] {
   if (schema.nodes.code_block !== undefined) rules.push(textblockTypeInputRule(/^```$/, schema.nodes.code_block));
 
   return [inputRules({ rules }), keymap(keys), keymap(baseKeymap), history(), dropCursor(), gapCursor()];
+}
+
+/**
+ * A line break that stays in its block: a newline inside code, a
+ * `hard_break` where the parent allows one, and nothing at all elsewhere,
+ * so the key falls through to the next binding.
+ */
+export function insertHardBreak(schema: Schema): Command {
+  const br = schema.nodes.hard_break;
+  return (state, dispatch) => {
+    const { $from, $to } = state.selection;
+    if ($from.parent.type.spec.code) {
+      dispatch?.(state.tr.insertText("\n").scrollIntoView());
+      return true;
+    }
+    if (br === undefined || !$from.sameParent($to) || !$from.parent.canReplaceWith($from.index(), $to.index(), br)) return false;
+    dispatch?.(state.tr.replaceSelectionWith(br.create()).scrollIntoView());
+    return true;
+  };
 }
 
 export { setBlockType, toggleMark, wrapIn, wrapInList };
