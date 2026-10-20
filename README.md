@@ -10,6 +10,10 @@ safe HTML and plain text. The two implementations are checked against one
 shared fixture, so a document written by one is read by the other without a
 migration.
 
+![The demo: the editor with an @ mention list open under the caret, a mention drawn as a React chip, a commented passage with its thread beside the editor, and under it the HTML, the HTML a stranger's comment would get, and its source, all recomputed from the stored document.](apps/demo/demo.png)
+
+Run it: `pnpm install && pnpm --filter coelho-demo dev`, then http://localhost:5180.
+
 ## Why
 
 A rich text editor is the one dependency every back-office ends up with,
