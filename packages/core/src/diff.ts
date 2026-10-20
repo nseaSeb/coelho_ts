@@ -16,7 +16,11 @@ export type BlockChange =
   /** The same kind of block, edited: its text, word by word. */
   | { kind: "changed"; before: Node; after: Node; words: WordChange[] };
 
-/** Past this many cells, a word diff is not worth its time: the block is shown removed and added. */
+/**
+ * Past this many cells, once the common ends are set aside, a comparison
+ * is not worth its time or its memory: what differs is shown removed and
+ * added instead.
+ */
 const MAX_CELLS = 1_000_000;
 
 /**
@@ -28,7 +32,9 @@ const MAX_CELLS = 1_000_000;
 export function diffDocuments(before: Node | null | undefined, after: Node | null | undefined, schema: Schema): BlockChange[] {
   const a = before?.content ?? [];
   const b = after?.content ?? [];
-  const steps = lcs(a.map(canonical), b.map(canonical));
+  const steps = lcs(a.map(canonical), b.map(canonical), MAX_CELLS);
+  // Two large, mostly different versions: everything went, everything came.
+  if (steps === null) return [...a.map((block): BlockChange => ({ kind: "removed", block })), ...b.map((block): BlockChange => ({ kind: "added", block }))];
   const out: BlockChange[] = [];
   let removed: Node[] = [];
   let added: Node[] = [];
@@ -73,9 +79,10 @@ function tokens(text: string): string[] {
 export function diffWords(before: string, after: string): WordChange[] | null {
   const a = tokens(before);
   const b = tokens(after);
-  if (a.length * b.length > MAX_CELLS) return null;
+  const steps = lcs(a, b, MAX_CELLS);
+  if (steps === null) return null;
   const out: WordChange[] = [];
-  for (const step of lcs(a, b)) {
+  for (const step of steps) {
     const text = step.kind === "added" ? (b[step.right] as string) : (a[step.left] as string);
     const last = out[out.length - 1];
     if (last !== undefined && last.kind === step.kind) last.text += text;
@@ -86,8 +93,12 @@ export function diffWords(before: string, after: string): WordChange[] | null {
 
 type Step = { kind: "same"; left: number; right: number } | { kind: "removed"; left: number; right: number } | { kind: "added"; left: number; right: number };
 
-/** A longest common subsequence, as the steps that walk from one list to the other. */
-function lcs(a: string[], b: string[]): Step[] {
+/**
+ * A longest common subsequence, as the steps that walk from one list to
+ * the other; `null` when what is left once the common ends are set aside
+ * is larger than `limit` cells.
+ */
+function lcs(a: string[], b: string[], limit: number): Step[] | null {
   // Common ends first: an edit in the middle of a long page costs only the middle.
   let start = 0;
   while (start < a.length && start < b.length && a[start] === b[start]) start += 1;
@@ -99,6 +110,7 @@ function lcs(a: string[], b: string[]): Step[] {
   }
   const n = endA - start;
   const m = endB - start;
+  if (n * m > limit) return null;
   const table: Uint32Array[] = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
   for (let i = n - 1; i >= 0; i -= 1) {
     for (let j = m - 1; j >= 0; j -= 1) {

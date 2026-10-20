@@ -28,8 +28,8 @@ interface Running {
   http: string;
 }
 
-async function start(store: DocumentStore = memoryStore(), accounts = memoryAccounts(), versionWindow?: number): Promise<Running & { accounts: typeof accounts }> {
-  const server = createNotesServer({ store, accounts, port: 0, debounce: 20, ...(versionWindow === undefined ? {} : { versionWindow }) });
+async function start(store: DocumentStore = memoryStore(), accounts = memoryAccounts(), versionWindow?: number, debounce = 20): Promise<Running & { accounts: typeof accounts }> {
+  const server = createNotesServer({ store, accounts, port: 0, debounce, ...(versionWindow === undefined ? {} : { versionWindow }) });
   await server.listen();
   running.push(server);
   const { port } = server.address;
@@ -415,6 +415,73 @@ describe("a page's history", () => {
     const document = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "From a vault." }] }] };
     await call(http, "/api/import", { body: { pages: [{ name: "fresh", document }] }, cookie });
     expect((await history(http, "fresh", cookie)).map((v) => [v.createdBy, v.note])).toEqual([["Camille", "imported"]]);
+  });
+
+  test("a page stored before it had a history keeps what it held as its first version", async () => {
+    const store = memoryStore();
+    // A page as an older release stored it: a row, no version.
+    const old = new Y.Doc();
+    const { seed } = await import("@nseaprotector/coelho-collab");
+    const body = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Written long ago." }] }] } as never;
+    seed(old, schema, body);
+    await store.save({ name: "old", body, hash: await hash(body), text: "Written long ago.", errors: [], updatedBy: "Someone", links: [] }, Y.encodeStateAsUpdate(old));
+    const { url, http } = await start(store);
+    const cookie = await signUp(http, "Camille");
+    const page = await open(url, "old", cookie);
+    firstText(page, 0).delete(0, 8);
+    await until(async () => (await store.get("old"))?.text === "long ago.");
+    const versions = await history(http, "old", cookie);
+    expect(versions.map((v) => [v.createdBy, v.note])).toEqual([["Camille", null], ["Someone", "before history"]]);
+    const first = (await (await call(http, `/api/pages/old/versions/${versions[1]!.id}`, { cookie })).json()) as { body: unknown };
+    expect(JSON.stringify(first.body)).toContain("Written long ago.");
+  });
+
+  test("a version two people wrote is theirs both, and is not folded into either one's session", async () => {
+    const { url, http, store } = await start(memoryStore(), memoryAccounts(), undefined, 400);
+    const ada = await signUp(http, "Ada");
+    const lin = await signUp(http, "Lin");
+    await call(http, "/api/users/2", { method: "PATCH", body: { role: "editor" }, cookie: ada });
+    const a = await open(url, "both", ada);
+    const b = await open(url, "both", lin);
+    firstText(a).insert(0, "Ada. ");
+    firstText(b).insert(0, "Lin. ");
+    await until(async () => ((await store.get("both"))?.text.includes("Ada.") && (await store.get("both"))?.text.includes("Lin.")) ?? false);
+    const [newest] = await history(http, "both", ada);
+    expect(newest?.createdBy?.split(", ").sort()).toEqual(["Ada", "Lin"]);
+  });
+
+  test("a restore is stored once, returns the version it made, and restoring the page as it is adds nothing", async () => {
+    let saves = 0;
+    const memory = memoryStore();
+    const { url, http, store } = await start({ ...memory, save: async (page, state) => ((saves += 1), memory.save(page, state)) });
+    const cookie = await signUp(http, "Camille");
+    const page = await open(url, "once", cookie);
+    const seeded = (await history(http, "once", cookie)).at(-1)!;
+    firstText(page).insert(0, "Gone soon. ");
+    await until(async () => (await store.get("once"))?.text.includes("Gone soon.") ?? false);
+    saves = 0;
+    const restored = (await (await call(http, `/api/pages/once/versions/${seeded.id}/restore`, { body: {}, cookie })).json()) as Summary;
+    expect(saves).toBe(1);
+    expect(restored).toMatchObject({ note: `restored from #${seeded.id}`, hash: seeded.hash });
+    expect((await history(http, "once", cookie))[0]?.id).toBe(restored.id);
+    const again = (await (await call(http, `/api/pages/once/versions/${seeded.id}/restore`, { body: {}, cookie })).json()) as Summary & { unchanged?: boolean };
+    expect(again.unchanged).toBe(true);
+    expect(await history(http, "once", cookie)).toHaveLength(3);
+  });
+
+  test("is read fifty versions at a time, and each version knows the one before it", async () => {
+    const store = memoryStore();
+    for (let i = 0; i < 60; i += 1) await store.addVersion({ name: "long", body: { type: "doc" } as never, hash: String(i), createdBy: "Ada", note: null });
+    const { http } = await start(store);
+    const cookie = await signUp(http, "Camille");
+    const newest = await history(http, "long", cookie);
+    expect(newest).toHaveLength(50);
+    const older = (await (await call(http, `/api/pages/long/versions?before=${newest.at(-1)!.id}`, { cookie })).json()) as Summary[];
+    expect(older).toHaveLength(10);
+    const last = (await (await call(http, `/api/pages/long/versions/${newest.at(-1)!.id}`, { cookie })).json()) as { previousId: string | null };
+    expect(last.previousId).toBe(older[0]!.id);
+    const first = (await (await call(http, `/api/pages/long/versions/${older.at(-1)!.id}`, { cookie })).json()) as { previousId: string | null };
+    expect(first.previousId).toBeNull();
   });
 });
 

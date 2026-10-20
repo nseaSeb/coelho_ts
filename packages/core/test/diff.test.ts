@@ -66,3 +66,26 @@ describe("diffWords", () => {
     expect(diffWords("w ".repeat(2000), "v ".repeat(2000))).toBeNull();
   });
 });
+
+describe("on large documents", () => {
+  test("a long paragraph with one word changed is still compared word by word", () => {
+    const words = Array.from({ length: 800 }, (_, i) => `word${i}`);
+    const before = words.join(" ");
+    const after = [...words.slice(0, 400), "CHANGED", ...words.slice(401)].join(" ");
+    const changes = diffWords(before, after);
+    expect(changes?.filter((change) => change.kind !== "same")).toEqual([
+      { kind: "removed", text: "word400" },
+      { kind: "added", text: "CHANGED" },
+    ]);
+  });
+
+  test("two large, mostly different versions are shown replaced, without a table the size of both", () => {
+    const many = (prefix: string): Node => doc(...Array.from({ length: 1500 }, (_, i) => p(`${prefix} ${i}`)));
+    const started = Date.now();
+    const changes = diffDocuments(many("a"), many("b"), schema);
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(changes.filter((change) => change.kind === "removed")).toHaveLength(1500);
+    expect(changes.filter((change) => change.kind === "added")).toHaveLength(1500);
+  });
+});
+

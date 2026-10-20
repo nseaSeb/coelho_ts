@@ -14,7 +14,11 @@ interface Summary {
 
 interface Version extends Summary {
   body: Document;
+  previousId: string | null;
 }
+
+/** The server sends this many at a time. */
+const PAGE = 50;
 
 type Compare = "changes" | "now";
 
@@ -34,9 +38,23 @@ export function History({ name, me }: { name: string; me: Me }): ReactNode {
   const [error, setError] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
 
+  const [more, setMore] = useState(false);
+
+  // The newest page of versions, refreshed; older pages, once loaded, are kept.
   const reload = useCallback(async (): Promise<void> => {
-    setVersions(await api<Summary[]>(`${path(name)}/versions`));
+    const newest = await api<Summary[]>(`${path(name)}/versions`);
+    const oldest = newest.at(-1)?.id;
+    setVersions((loaded) => [...newest, ...(loaded ?? []).filter((version) => oldest !== undefined && Number(version.id) < Number(oldest))]);
+    setMore((already) => already || newest.length === PAGE);
   }, [name]);
+
+  const loadOlder = async (): Promise<void> => {
+    const oldest = versions?.at(-1)?.id;
+    if (oldest === undefined) return;
+    const older = await api<Summary[]>(`${path(name)}/versions?before=${oldest}`);
+    setVersions((loaded) => [...(loaded ?? []), ...older]);
+    setMore(older.length === PAGE);
+  };
   useEffect(() => {
     void reload().catch(() => setVersions([]));
     const timer = setInterval(() => void reload().catch(() => {}), 4000);
@@ -45,27 +63,31 @@ export function History({ name, me }: { name: string; me: Me }): ReactNode {
 
   const index = versions?.findIndex((version) => version.id === selected) ?? -1;
   const current = index >= 0 ? versions?.[index] : undefined;
-  const previous = index >= 0 ? versions?.[index + 1] : undefined;
+  const newest = versions?.[0];
 
-  // What to compare: the version with the one before it, or with the page now.
+  // What to compare: the version with the one before it, as the server says
+  // which one that is, or with the page now. A new choice clears the last
+  // comparison and the last error at once.
   useEffect(() => {
-    if (current === undefined) return void setBodies(null);
+    setBodies(null);
+    setError(null);
+    if (current === undefined) return;
     let live = true;
     const load = async (): Promise<void> => {
-      const target = (await api<Version>(`${path(name)}/versions/${current.id}`)).body;
+      const version = await api<Version>(`${path(name)}/versions/${current.id}`);
       if (compare === "now") {
         const now = (await api<{ body: Document }>(path(name))).body;
-        if (live) setBodies({ base: target, target: now });
+        if (live) setBodies({ base: version.body, target: now });
       } else {
-        const base = previous === undefined ? null : (await api<Version>(`${path(name)}/versions/${previous.id}`)).body;
-        if (live) setBodies({ base, target });
+        const base = version.previousId === null ? null : (await api<Version>(`${path(name)}/versions/${version.previousId}`)).body;
+        if (live) setBodies({ base, target: version.body });
       }
     };
     void load().catch((caught: Error) => live && setError(caught.message));
     return () => {
       live = false;
     };
-  }, [name, current?.id, current?.updatedAt, previous?.id, compare]);
+  }, [name, current?.id, current?.updatedAt, compare]);
 
   const changes = useMemo(() => (bodies === null ? null : diffDocuments(bodies.base, bodies.target, schema)), [bodies]);
 
@@ -75,6 +97,7 @@ export function History({ name, me }: { name: string; me: Me }): ReactNode {
     setError(null);
     try {
       const restored = await api<Summary>(`${path(name)}/versions/${current.id}/restore`, { body: {} });
+      // The version the restore made, as the server returned it, not whatever is newest by now.
       await reload();
       setSelected(restored.id);
       setCompare("changes");
@@ -104,6 +127,11 @@ export function History({ name, me }: { name: string; me: Me }): ReactNode {
           </li>
         ))}
       </ol>
+      {more ? (
+        <button type="button" className="older" onClick={() => void loadOlder()}>
+          Older versions
+        </button>
+      ) : null}
       {current === undefined ? (
         <p className="muted small">Choose a version to see what it changed.</p>
       ) : (
@@ -117,11 +145,13 @@ export function History({ name, me }: { name: string; me: Me }): ReactNode {
             </label>
           </div>
           {changes === null ? <p className="muted small">…</p> : <Diff changes={changes} />}
-          {me.role !== "reader" && index > 0 ? (
+          {me.role === "reader" || index === 0 ? null : current.hash === newest?.hash ? (
+            <p className="muted small">The page is this version already.</p>
+          ) : (
             <button type="button" className="primary" disabled={restoring} onClick={() => void restore()}>
               {restoring ? "Restoring…" : `Restore version #${current.id}`}
             </button>
-          ) : null}
+          )}
           {error === null ? null : (
             <p className="error small" role="alert">
               {error}
@@ -135,6 +165,25 @@ export function History({ name, me }: { name: string; me: Me }): ReactNode {
 
 const blockHtml = (block: Node): string => toHtml({ type: "doc", content: [block] }, schema);
 
+/** The element an edited block's words are shown in, so a heading still reads as one, and code as code. */
+function Frame({ block, children }: { block: Node; children: ReactNode }): ReactNode {
+  if (block.type === "heading") {
+    const level = Number(block.attrs?.level ?? 1);
+    const Tag = `h${level >= 1 && level <= 6 ? level : 1}` as "h1";
+    return <Tag className="diff-changed">{children}</Tag>;
+  }
+  if (block.type === "code_block") {
+    return (
+      <pre className="diff-changed">
+        <code>{children}</code>
+      </pre>
+    );
+  }
+  if (block.type === "paragraph") return <p className="diff-changed">{children}</p>;
+  // A list, a quote: its text with its line breaks, as the words come.
+  return <div className="diff-changed diff-lines">{children}</div>;
+}
+
 /** The changes as the page would show them: kept blocks faded, added and removed marked, edits word by word. */
 export function Diff({ changes }: { changes: BlockChange[] }): ReactNode {
   if (changes.every((change) => change.kind === "same")) return <p className="muted small">No change.</p>;
@@ -142,12 +191,22 @@ export function Diff({ changes }: { changes: BlockChange[] }): ReactNode {
     <div className="diff prose">
       {changes.map((change, at) => {
         if (change.kind === "changed") {
+          // The same words, other marks or attributes: the change is in how
+          // it looks, which only the two blocks side by side can show.
+          if (change.words.every((word) => word.kind === "same")) {
+            return (
+              <div key={at} className="diff-restyled" title="The same words, formatted differently">
+                <div className="diff-removed" dangerouslySetInnerHTML={{ __html: blockHtml(change.before) }} />
+                <div className="diff-added" dangerouslySetInnerHTML={{ __html: blockHtml(change.after) }} />
+              </div>
+            );
+          }
           return (
-            <p key={at} className="diff-changed">
+            <Frame key={at} block={change.after}>
               {change.words.map((word, i) =>
                 word.kind === "same" ? <span key={i}>{word.text}</span> : word.kind === "added" ? <ins key={i}>{word.text}</ins> : <del key={i}>{word.text}</del>,
               )}
-            </p>
+            </Frame>
           );
         }
         return <div key={at} className={`diff-${change.kind}`} dangerouslySetInnerHTML={{ __html: blockHtml(change.block) }} />;

@@ -131,3 +131,8 @@ button.primary:disabled { opacity: 0.5; }
 .diff-removed { background: rgba(181, 68, 44, 0.1); border-left: 3px solid var(--accent); padding-left: 6px; text-decoration: line-through; }
 .diff ins { background: rgba(45, 122, 62, 0.22); text-decoration: none; border-radius: 2px; }
 .diff del { background: rgba(181, 68, 44, 0.2); border-radius: 2px; }
+.diff-changed { border-left: 3px solid #c9a227; padding-left: 6px; }
+.diff-lines { white-space: pre-wrap; }
+.diff-restyled { border-left: 3px solid #c9a227; padding-left: 6px; }
+.diff-restyled .diff-removed { text-decoration: none; opacity: 0.6; }
+.history .older { width: 100%; font: inherit; font-size: 12px; padding: 4px; margin: -6px 0 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); cursor: pointer; }

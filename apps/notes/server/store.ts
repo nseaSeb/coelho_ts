@@ -52,9 +52,12 @@ export interface DocumentStore {
    * never as HTML: the text is the writers', and is rendered as text.
    */
   search(query: string): Promise<Array<{ name: string; snippet: string }>>;
-  /** A page's history, newest first, without the bodies. */
-  versions(name: string): Promise<VersionSummary[]>;
-  version(name: string, id: string): Promise<PageVersion | null>;
+  /** A page's history, newest first, without the bodies: `limit` of them, older than `before` if given. */
+  versions(name: string, page?: { before?: string; limit?: number }): Promise<VersionSummary[]>;
+  /** A version, and the id of the one before it: what it changed is the difference with that one. */
+  version(name: string, id: string): Promise<(PageVersion & { previousId: string | null }) | null>;
+  /** The newest version, or `null` for a page with no history yet. */
+  latestVersion(name: string): Promise<VersionSummary | null>;
   addVersion(version: Omit<PageVersion, "id" | "createdAt" | "updatedAt">): Promise<PageVersion>;
   /** Folds a new state into an existing version. */
   updateVersion(id: string, change: Pick<PageVersion, "body" | "hash">): Promise<void>;
@@ -72,8 +75,21 @@ export function memoryStore(): DocumentStore {
     return rest;
   };
   return {
-    versions: async (name) => history.filter((version) => version.name === name).reverse().slice(0, 100).map(summary),
-    version: async (name, id) => history.find((version) => version.name === name && version.id === id) ?? null,
+    versions: async (name, page = {}) =>
+      history
+        .filter((version) => version.name === name && (page.before === undefined || Number(version.id) < Number(page.before)))
+        .reverse()
+        .slice(0, page.limit ?? 50)
+        .map(summary),
+    version: async (name, id) => {
+      const mine = history.filter((version) => version.name === name);
+      const at = mine.findIndex((version) => version.id === id);
+      return at === -1 ? null : { ...(mine[at] as PageVersion), previousId: mine[at - 1]?.id ?? null };
+    },
+    latestVersion: async (name) => {
+      for (let i = history.length - 1; i >= 0; i -= 1) if (history[i]!.name === name) return summary(history[i]!);
+      return null;
+    },
     addVersion: async (version) => {
       const now = new Date().toISOString();
       const stored = { ...version, id: String(nextVersion++), createdAt: now, updatedAt: now };
@@ -199,14 +215,26 @@ export async function postgresStore(pool: pg.Pool): Promise<DocumentStore> {
       );
       return result.rows.map((r) => ({ name: r.name as string, snippet: r.snippet as string }));
     },
-    versions: async (name) => {
-      const result = await pool.query("select id, name, hash, created_by, note, created_at, updated_at from page_versions where name = $1 order by id desc limit 100", [name]);
+    versions: async (name, page = {}) => {
+      const before = page.before !== undefined && /^\d+$/.test(page.before) ? page.before : null;
+      const result = await pool.query(
+        "select id, name, hash, created_by, note, created_at, updated_at from page_versions where name = $1 and ($2::bigint is null or id < $2) order by id desc limit $3",
+        [name, before, Math.min(page.limit ?? 50, 200)],
+      );
       return result.rows.map((r) => versionOf(r) as VersionSummary);
     },
     version: async (name, id) => {
       if (!/^\d+$/.test(id)) return null;
-      const result = await pool.query("select * from page_versions where name = $1 and id = $2", [name, id]);
-      return result.rows[0] === undefined ? null : (versionOf(result.rows[0]) as PageVersion);
+      const result = await pool.query(
+        "select *, (select max(id) from page_versions p where p.name = v.name and p.id < v.id) as previous_id from page_versions v where name = $1 and id = $2",
+        [name, id],
+      );
+      const row = result.rows[0];
+      return row === undefined ? null : { ...(versionOf(row) as PageVersion), previousId: row.previous_id === null ? null : String(row.previous_id) };
+    },
+    latestVersion: async (name) => {
+      const result = await pool.query("select id, name, hash, created_by, note, created_at, updated_at from page_versions where name = $1 order by id desc limit 1", [name]);
+      return result.rows[0] === undefined ? null : (versionOf(result.rows[0]) as VersionSummary);
     },
     addVersion: async (version) => {
       const result = await pool.query(
