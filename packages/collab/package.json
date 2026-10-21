@@ -1,6 +1,6 @@
 {
   "name": "@nseaprotector/coelho-collab",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Real-time collaborative rich text over Yjs for ProseMirror: cursors, offline merge, per-writer undo, comment threads that survive other writers, and a validated document to store.",
   "keywords": [
     "yjs",

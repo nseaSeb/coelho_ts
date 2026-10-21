@@ -2,7 +2,9 @@
 
 The four packages are versioned together.
 
-## Unreleased
+## 0.3.0 — 2026-10-21
+
+Additions only; nothing that worked in 0.2.0 changes.
 
 - **@nseaprotector/coelho-core**: `diffDocuments(before, after, schema)`
   compares two versions of a document block by block, by canonical bytes,

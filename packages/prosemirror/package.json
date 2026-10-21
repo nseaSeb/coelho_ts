@@ -1,6 +1,6 @@
 {
   "name": "@nseaprotector/coelho-prosemirror",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A ProseMirror rich text editor on a schema you own: anchored comments, @mentions and / commands, Markdown import and paste, HTML import that runs nothing. Framework-free, for React, Vue, Angular or plain JS.",
   "keywords": [
     "prosemirror",
